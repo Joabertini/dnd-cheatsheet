@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0; background: #111; }
@@ -933,6 +935,129 @@ const UNIVERSAL_RULES = [
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+const KNOWN_CLASSES = ['barbarian','bard','cleric','druid','fighter','monk','paladin','ranger','rogue','sorcerer','warlock','wizard'];
+
+// Traducciones español → clave exacta en FEATS_DATA
+const FEAT_ES_TO_EN = {
+  'francotirador':          'Sharpshooter',
+  'alerta':                 'Alert',
+  'suerte':                 'Lucky',
+  'maestro de armas grandes': 'Great Weapon Master',
+  'experto en ballesta':    'Crossbow Expert',
+  'maestro de ballesta':    'Crossbow Expert',
+  'maestro de arma de asta':'Polearm Master',
+  'centinela':              'Sentinel',
+  'lanzador de guerra':     'War Caster',
+  'maestro de escudo':      'Shield Master',
+  'móvil':                  'Mobile',
+  'ágil':                   'Mobile',
+  'duro':                   'Tough',
+  'resistente':             'Resilient (CON)',
+  'resistente (con)':       'Resilient (CON)',
+  'asesino de magos':       'Mage Slayer',
+  'duelista defensivo':     'Defensive Duelist',
+  'luchador de taberna':    'Tavern Brawler',
+  'iniciación mágica':      'Magic Initiate',
+  'iniciado mágico':        'Magic Initiate',
+  'francotirador de conjuros': 'Spell Sniper',
+  'líder inspirador':       'Inspiring Leader',
+  'agresor salvaje':        'Savage Attacker',
+  'adeptos marciales':      'Martial Adept',
+  'adept marcial':          'Martial Adept',
+  'doble empuñadura':       'Dual Wielder',
+  'cargador':               'Charger',
+  'afortunado':             'Lucky',
+};
+
+async function parsePdfSheet(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  let name = '', classLevel = '', featText = '';
+
+  // ── 1. Intentar AcroForm (PDF fillable oficial de WotC y similares) ────────
+  try {
+    const fieldObjs = await pdf.getFieldObjects();
+    if (fieldObjs && Object.keys(fieldObjs).length > 0) {
+      const get = (...keys) => {
+        for (const k of keys) {
+          const v = fieldObjs[k]?.[0]?.value;
+          if (v && String(v).trim()) return String(v).trim();
+        }
+        return '';
+      };
+      name       = get('CharacterName', 'CharacterName2', 'Character Name');
+      classLevel = get('ClassLevel', 'Class  Level', 'Class/Level', 'ClassLevel2');
+      featText   = get('Feat+Traits', 'Features and Traits', 'FeatTraits', 'Feats', 'AttacksSpellcasting');
+    }
+  } catch(_) {}
+
+  // ── 2. Fallback: extracción de texto (Roll20, D&D Beyond, etc.) ───────────
+  let allText = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    allText += content.items.map(i => i.str).join(' ') + '\n';
+  }
+
+  if (!classLevel) {
+    // Buscar "Rogue 4", "Fighter 5", etc.
+    const classRegex = new RegExp(
+      `\\b(${KNOWN_CLASSES.map(c => c[0].toUpperCase()+c.slice(1)).join('|')})\\s+(\\d+)`, 'i'
+    );
+    const m = allText.match(classRegex);
+    if (m) classLevel = m[0];
+  }
+
+  if (!name) {
+    // Intentar extraer nombre antes del label en español o inglés
+    const nameMatch =
+      allText.match(/([A-ZÀ-Ÿa-zà-ÿ][^\n]{1,40}?)\s+NOMBRE DE PERSONAJE/i) ||
+      allText.match(/Character Name\s*([A-ZÀ-Ÿ][^\n]{1,40})/i);
+    if (nameMatch) name = nameMatch[1].trim();
+  }
+
+  featText = featText || allText;
+
+  // ── 3. Parsear clase y nivel desde "Fighter 5" o "Paladin 3 / Fighter 2" ───
+  const classMatches = [...classLevel.matchAll(/([A-Za-z]+)\s+(\d+)/g)];
+  const allClasses = classMatches
+    .map(m => m[1].toLowerCase())
+    .filter(c => KNOWN_CLASSES.includes(c));
+  const level    = classMatches[0] ? parseInt(classMatches[0][2]) : null;
+  const rawClass = allClasses[0] || '';
+
+  if (!rawClass) return null;
+
+  // ── 4. Detectar feats — inglés directo + traducciones al español ───────────
+  const featKeys      = Object.keys(FEATS_DATA);
+  const textLower     = featText.toLowerCase();
+  const detectedFeats = [];
+
+  // 4a. Nombres en inglés (Alert, Lucky, etc.)
+  for (const feat of featKeys) {
+    if (textLower.includes(feat.toLowerCase()) && !detectedFeats.includes(feat)) {
+      detectedFeats.push(feat);
+    }
+  }
+  // 4b. Nombres en español → mapear a inglés
+  for (const [esName, enFeat] of Object.entries(FEAT_ES_TO_EN)) {
+    if (textLower.includes(esName.toLowerCase()) && !detectedFeats.includes(enFeat)) {
+      detectedFeats.push(enFeat);
+    }
+  }
+
+  return {
+    name: name || null,
+    level,
+    rawClass,
+    rawSubclass: '',
+    allClasses,
+    allSubclasses: [],
+    detectedFeats,
+    source: 'PDF'
+  };
+}
+
 function parseCharacterSheet(json) {
   if (json.items && Array.isArray(json.items)) {
     const classItems = json.items.filter(i => i.type === 'class');
@@ -1115,73 +1240,94 @@ function CheatSheet() {
   const handleDragOver = useCallback(e => { e.preventDefault(); setDragOver(true); }, []);
   const handleDragLeave = useCallback(e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }, []);
 
+  const applyParsed = useCallback((parsed, fileName) => {
+    trackUsage(parsed, fileName);
+
+    if (!parsed || !parsed.rawClass) {
+      setImportMsg({ text: '❌ No se encontró información de clase', ok: false });
+      setTimeout(() => setImportMsg(null), 3500);
+      return;
+    }
+    const classKey = Object.keys(CLASS_DATA).find(k =>
+      k === parsed.rawClass || parsed.rawClass.includes(k) || k.includes(parsed.rawClass)
+    );
+    if (!classKey) {
+      setImportMsg({ text: `❌ Clase "${parsed.rawClass}" no reconocida`, ok: false });
+      setTimeout(() => setImportMsg(null), 3500);
+      return;
+    }
+    setSelectedClass(classKey);
+    if (parsed.name) setCharName(parsed.name);
+    if (parsed.level) setCharLevel(Number(parsed.level));
+
+    if (parsed.rawSubclass) {
+      const subKeys = Object.keys(CLASS_DATA[classKey].subclasses);
+      const subKey = subKeys.find(s =>
+        s.toLowerCase() === parsed.rawSubclass.toLowerCase() ||
+        parsed.rawSubclass.toLowerCase().includes(s.toLowerCase()) ||
+        s.toLowerCase().includes(parsed.rawSubclass.toLowerCase())
+      );
+      if (subKey) setSelectedSubclass(subKey);
+    }
+
+    const feats  = parsed.detectedFeats || [];
+    const combos = detectCombos(parsed.allClasses, parsed.allSubclasses, feats);
+    setDetectedFeats(feats);
+    setDetectedCombos(combos);
+    setHasImport(true);
+
+    const displayName = parsed.name || 'Personaje';
+    const srcTag  = parsed.source === 'PDF' ? ' [PDF]' : '';
+    const featStr = feats.length ? ` · ${feats.length} feat${feats.length > 1 ? 's' : ''}` : '';
+    const comboStr = combos.length ? ` · ${combos.length} combo${combos.length > 1 ? 's' : ''}` : '';
+    setImportMsg({ text: `✓ ${displayName} — ${classKey} nv ${parsed.level || '?'} cargado${srcTag}${featStr}${comboStr}`, ok: true });
+    setTimeout(() => setImportMsg(null), 5000);
+    setActiveTab('combat');
+  }, []);
+
   const handleDrop = useCallback(e => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
-    if (!file.name.endsWith('.json')) {
-      setImportMsg({ text: '❌ Solo se aceptan archivos .json', ok: false });
+
+    const isJson = file.name.endsWith('.json');
+    const isPdf  = file.name.endsWith('.pdf');
+
+    if (!isJson && !isPdf) {
+      setImportMsg({ text: '❌ Solo se aceptan archivos .json o .pdf', ok: false });
       setTimeout(() => setImportMsg(null), 3000);
       return;
     }
+
     const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        const parsed = parseCharacterSheet(data);
 
-        // Tracking (silencioso)
-        trackUsage(parsed, file.name);
-
-        if (!parsed || !parsed.rawClass) {
-          setImportMsg({ text: '❌ No se encontró información de clase', ok: false });
+    if (isJson) {
+      reader.onload = ev => {
+        try {
+          const data   = JSON.parse(ev.target.result);
+          const parsed = parseCharacterSheet(data);
+          applyParsed(parsed, file.name);
+        } catch {
+          setImportMsg({ text: '❌ Error al leer el archivo JSON', ok: false });
+          setTimeout(() => setImportMsg(null), 3000);
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      setImportMsg({ text: '⏳ Leyendo PDF...', ok: true });
+      reader.onload = async ev => {
+        try {
+          const parsed = await parsePdfSheet(ev.target.result);
+          applyParsed(parsed, file.name);
+        } catch {
+          setImportMsg({ text: '❌ No se pudo leer el PDF', ok: false });
           setTimeout(() => setImportMsg(null), 3500);
-          return;
         }
-        const classKey = Object.keys(CLASS_DATA).find(k =>
-          k === parsed.rawClass || parsed.rawClass.includes(k) || k.includes(parsed.rawClass)
-        );
-        if (!classKey) {
-          setImportMsg({ text: `❌ Clase "${parsed.rawClass}" no reconocida`, ok: false });
-          setTimeout(() => setImportMsg(null), 3500);
-          return;
-        }
-        setSelectedClass(classKey);
-        if (parsed.name) setCharName(parsed.name);
-        if (parsed.level) setCharLevel(Number(parsed.level));
-
-        if (parsed.rawSubclass) {
-          const subKeys = Object.keys(CLASS_DATA[classKey].subclasses);
-          const subKey = subKeys.find(s =>
-            s.toLowerCase() === parsed.rawSubclass.toLowerCase() ||
-            parsed.rawSubclass.toLowerCase().includes(s.toLowerCase()) ||
-            s.toLowerCase().includes(parsed.rawSubclass.toLowerCase())
-          );
-          if (subKey) setSelectedSubclass(subKey);
-        }
-
-        const feats = parsed.detectedFeats || [];
-        const combos = detectCombos(parsed.allClasses, parsed.allSubclasses, feats);
-        setDetectedFeats(feats);
-        setDetectedCombos(combos);
-        setHasImport(true);
-
-        const displayName = parsed.name || 'Personaje';
-        const featStr = feats.length ? ` · ${feats.length} feat${feats.length > 1 ? 's' : ''}` : '';
-        const comboStr = combos.length ? ` · ${combos.length} combo${combos.length > 1 ? 's' : ''}` : '';
-        setImportMsg({ text: `✓ ${displayName} — ${classKey} nv ${parsed.level || '?'} cargado${featStr}${comboStr}`, ok: true });
-        setTimeout(() => setImportMsg(null), 5000);
-
-        // Auto-switch a combat tab para ver los resultados
-        setActiveTab('combat');
-      } catch {
-        setImportMsg({ text: '❌ Error al leer el archivo JSON', ok: false });
-        setTimeout(() => setImportMsg(null), 3000);
-      }
-    };
-    reader.readAsText(file);
-  }, []);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  }, [applyParsed]);
 
   const allBonusActions = [
     ...cls.bonusActions,
@@ -1209,7 +1355,7 @@ function CheatSheet() {
     },
       React.createElement('div', { style: { fontSize: 56 } }, '📄'),
       React.createElement('div', { style: { fontSize: 22, fontWeight: 'bold', color: '#fff' } }, 'Soltá tu hoja aquí'),
-      React.createElement('div', { style: { fontSize: 14, color: '#aaa' } }, 'JSON de Foundry VTT — detecta clase, subclase, nivel, feats y combos')
+      React.createElement('div', { style: { fontSize: 14, color: '#aaa' } }, 'JSON de Foundry VTT o PDF de hoja de personaje')
     ),
 
     // Toast
