@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; background: #111; }
+  input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+  button { font-family: Georgia, serif; }
+  input { font-family: Georgia, serif; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useCallback } = React;
+
+const CLASS_DATA = {
+  fighter: {
+    color: "#c0392b", accent: "#e74c3c", bg: "#1a0a0a", icon: "⚔️", role: "Guerrero marcial",
+    difficultyWarnings: [],
+    bonusActions: [
+      { name: "Segunda acción de ataque", desc: "Con Action Surge podés tomar OTRA acción completa (1 vez por descanso corto)", highlight: true },
+      { name: "Ataque con arma secundaria", desc: "Si peleás con dos armas ligeras, usá la acción adicional para atacar con la mano secundaria (sin agregar modificador al daño)" },
+    ],
+    reactions: [
+      { name: "Ataque de oportunidad", desc: "Cuando un enemigo sale de tu alcance sin Desengancharse, podés atacar con tu reacción" },
+    ],
+    classFeatures: [
+      { name: "Second Wind", resource: "1/descanso corto", desc: "Acción adicional: recuperás 1d10 + nivel de Fighter de HP. ¡No lo olvides entre combates!" },
+      { name: "Action Surge", resource: "1/descanso corto (2 en nivel 17)", desc: "Tomás una acción adicional completa en tu turno. La herramienta más poderosa del Fighter. Usala en momentos críticos.", highlight: true },
+    ],
+    forgottenTip: "⚠️ El error más común del Fighter: olvidar usar Second Wind entre oleadas de combate. Siempre que termines un enfrentamiento y no hayas usado Short Rest, usá Second Wind si lo necesitás.",
+    subclasses: {
+      "Champion": { extra: [{ name: "Golpe Crítico mejorado", desc: "Crítico con 19-20 (nivel 3), 18-20 (nivel 15). ¡Anotá el rango actualizado!" }] },
+      "Battle Master": {
+        extra: [
+          { name: "Maniobras", resource: "Dados de Superioridad (d8→d12)", desc: "Tenés dados limitados. Cada maniobra los gasta. Se recuperan en descanso corto.", highlight: true },
+          { name: "Lista de maniobras", desc: "Escribí tus maniobras elegidas — son fáciles de olvidar en el calor del combate" }
+        ],
+        forgottenTip: "⚠️ Battle Master: podés usar VARIAS maniobras distintas por turno siempre que tengas dados disponibles."
+      },
+      "Eldritch Knight": {
+        extra: [
+          { name: "Spellcasting", desc: "Spell slots limitados. Anotá cuántos gastaste.", highlight: true },
+          { name: "War Magic (nivel 7)", desc: "Cuando lanzás un cantrip, podés hacer un ataque con arma como acción adicional." }
+        ],
+        forgottenTip: "⚠️ Eldritch Knight: si usás acción adicional para lanzar, solo cantrips con la acción principal."
+      },
+      "Purple Dragon Knight": {
+        extra: [
+          { name: "Rallying Cry (nivel 3)", desc: "Con Second Wind: hasta 3 aliados que puedas ver recuperan HP igual a tu nivel de Fighter.", highlight: true },
+          { name: "Royal Envoy (nivel 7)", desc: "Proficiencia en Persuasión. Si ya la tenés, doble proficiencia." }
+        ]
+      },
+      "Arcane Archer": {
+        extra: [
+          { name: "Arcane Shot", resource: "2 usos / descanso corto", desc: "Flechas mágicas con efectos especiales: Banishing, Bursting, Enfeebling, Grasping, Piercing, Seeking, Shadow, Beguiling.", highlight: true },
+        ],
+        forgottenTip: "⚠️ Arcane Archer: los 2 usos de Arcane Shot se recuperan en descanso CORTO. Usálos cada combate."
+      },
+      "Cavalier": {
+        extra: [
+          { name: "Unwavering Mark (nivel 3)", desc: "Cuando atacás a un enemigo, lo marcás. Si ataca a otro aliado, podés atacar como Acción Adicional (STR/DEX mod + 5 daño).", highlight: true },
+          { name: "Warding Maneuver (nivel 7)", resource: "CON mod / descanso largo", desc: "Reacción: das +4 CA a vos o un aliado adyacente contra un ataque, y reducís el daño con 1d8 si igual impacta." }
+        ]
+      },
+      "Samurai": {
+        extra: [
+          { name: "Fighting Spirit", resource: "3 / descanso largo", desc: "Acción adicional: ventaja en ataques ese turno + 5-15 HP temporales (según nivel). Potente y olvidado.", highlight: true },
+          { name: "Rapid Strike (nivel 7)", desc: "Si tenés ventaja en un ataque, podés descartar la ventaja para ganar un ataque adicional en ese ataque." }
+        ],
+        forgottenTip: "⚠️ Samurai: Fighting Spirit tiene 3 usos por descanso largo. Son más que suficientes para activarlo en CADA combate importante."
+      },
+      "Echo Knight": {
+        extra: [
+          { name: "Manifest Echo", desc: "Creás un eco de vos mismo en espacio desocupado en 15ft. Podés atacar desde su posición.", highlight: true },
+          { name: "Unleash Incarnation", resource: "CON mod / descanso largo", desc: "Cuando atacás con Acción de Ataque, tu eco puede hacer un ataque adicional." }
+        ]
+      },
+      "Psi Warrior": {
+        extra: [
+          { name: "Psionic Power", resource: "Psionic Energy Dice (d6→d12)", desc: "Dados psíquicos para: movimiento extra, empuje psíquico, o escudo protector.", highlight: true },
+        ],
+        forgottenTip: "⚠️ Psi Warrior: uno de los Psionic Energy Dice se recarga en descanso corto, los demás en largo. Usá al menos uno por combate."
+      },
+      "Rune Knight": {
+        extra: [
+          { name: "Rune Carving", desc: "Grabás runas en armas/armadura con efectos únicos: Fire (daño adicional), Frost, Stone, Storm, Hill, Cloud.", highlight: true },
+          { name: "Giant's Might", resource: "STR mod / descanso largo", desc: "Acción adicional: te agrandás (tamaño Large), ventaja en STR checks/saves, +1d6 o 1d8 daño." }
+        ]
+      }
+    }
+  },
+
+  barbarian: {
+    color: "#e67e22", accent: "#f39c12", bg: "#1a1000", icon: "🪓", role: "Berserker salvaje",
+    difficultyWarnings: [],
+    bonusActions: [
+      { name: "FURIA", desc: "Entrás en Furia como acción adicional. Ventaja en STR, resistencia a daño físico, bonus de daño. ¡Habilidad más importante!", highlight: true },
+    ],
+    reactions: [{ name: "Ataque de oportunidad", desc: "Cuando un enemigo sale de tu alcance sin Desengancharse" }],
+    classFeatures: [
+      { name: "Furia", resource: "Ver hoja / descanso largo", desc: "SIEMPRE entrá en Furia al inicio del combate si vas a pelear cuerpo a cuerpo.", highlight: true },
+      { name: "Defensa sin Armadura", desc: "CA = 10 + DEX + CON (sin armadura). Calculala correctamente." },
+      { name: "Ataque Temerario", desc: "Ventaja en ataques de STR... pero los enemigos tienen ventaja contra vos hasta tu próximo turno." },
+    ],
+    forgottenTip: "⚠️ El error #1 del Barbarian: entrar al combate SIN activar Furia. Hacelo SIEMPRE como primera acción adicional.",
+    subclasses: {
+      "Berserker": {
+        extra: [{ name: "Frenesí", resource: "1/furia (con penalidad)", desc: "Atacás como acción adicional cada turno en furia. Costo: 1 nivel de agotamiento al terminar.", highlight: true }],
+        forgottenTip: "⚠️ Berserker: el agotamiento se acumula. 2+ niveles es peligroso. Usá Frenesí con cabeza."
+      },
+      "Totem Warrior": {
+        extra: [{ name: "Espíritu Tótem", desc: "Oso: resistencia a TODO daño en furia. Lobo: aliados tienen ventaja en ataques vs enemigos adyacentes a vos. Águila: ventaja en Perception, Dash como acción adicional.", highlight: true }]
+      },
+      "Ancestral Guardian": {
+        extra: [
+          { name: "Ancestral Protectors", desc: "Cuando entrás en furia y atacás: el primer objetivo tiene desventaja en ataques a aliados y los aliados reciben resistencia contra sus ataques.", highlight: true },
+        ],
+        forgottenTip: "⚠️ Ancestral Guardian: es uno de los mejores tanks del juego. Tu rol es marcar al enemigo más peligroso y proteger a tus aliados."
+      },
+      "Storm Herald": {
+        extra: [
+          { name: "Storm Aura", desc: "En furia: aura de tormenta activa. Desierto: daño de fuego a enemigos. Mar: daño de relámpago. Tundra: HP temporales a aliados.", highlight: true },
+        ]
+      },
+      "Zealot": {
+        extra: [
+          { name: "Divine Fury", resource: "En furia", desc: "Primer ataque de cada turno: +1d6 daño radiante o necrótico (según deidad) + la mitad de tu nivel.", highlight: true },
+          { name: "Warrior of the Gods", desc: "Los hechizos de resurrección no requieren material component para resucitarte. ¡Sos un mártir difícil de matar!" }
+        ]
+      },
+      "Beast": {
+        extra: [
+          { name: "Form of the Beast", desc: "En furia: armas naturales: Mordida (1d8, recuperás HP), Garras (un ataque extra de 1d6), Cola (reacción para +1d8 CA contra una tirada).", highlight: true },
+        ]
+      },
+      "Wild Magic": {
+        extra: [
+          { name: "Magic Awareness", resource: "Nivel / descanso largo", desc: "Acción: detectás magia en 60ft." },
+          { name: "Wild Surge", desc: "Cada vez que entrás en Furia: tira en tabla Wild Magic. Efectos aleatorios poderosos — desde invocar criaturas hasta AoE de colores.", highlight: true }
+        ],
+        forgottenTip: "⚠️ Wild Magic Barbarian: los surges son poderosos E impredecibles. Avisale al DM que te gusta el caos."
+      }
+    }
+  },
+
+  rogue: {
+    color: "#27ae60", accent: "#2ecc71", bg: "#001a08", icon: "🗡️", role: "Pícaro sigiloso",
+    difficultyWarnings: [],
+    bonusActions: [
+      { name: "Cunning Action: Dash", desc: "Moverte el doble de tu velocidad" },
+      { name: "Cunning Action: Disengage", desc: "Escapás sin provocar ataques de oportunidad", highlight: true },
+      { name: "Cunning Action: Hide", desc: "Intentás esconderte para ganar ventaja en tu próximo ataque" },
+    ],
+    reactions: [
+      { name: "Ataque de oportunidad", desc: "Cuando un enemigo sale de tu alcance" },
+      { name: "Uncanny Dodge (nivel 5)", desc: "Cuando un atacante que podés ver te golpea, reducís su daño a la mitad", highlight: true },
+    ],
+    classFeatures: [
+      { name: "Sneak Attack", resource: "1 vez por TURNO", desc: "Necesitás VENTAJA O un aliado adyacente al enemigo sin estar en desventaja.", highlight: true },
+      { name: "Thieves' Cant", desc: "Lenguaje secreto de ladrones. Útil en roleplay." },
+    ],
+    forgottenTip: "⚠️ Sneak Attack: podés usarlo en el turno del ENEMIGO (ataque de oportunidad). Y recordá: 1 vez por turno, no por ronda.",
+    subclasses: {
+      "Thief": {
+        extra: [
+          { name: "Fast Hands", desc: "Cunning Action también: usar objeto, Sleight of Hand, usar ladrón de herramientas." },
+          { name: "Second-Story Work", desc: "Subir no cuesta movimiento extra. Salto largo y alto aumentados." }
+        ]
+      },
+      "Assassin": {
+        extra: [{ name: "Assassinate", desc: "Ventaja en ataques vs quien no tomó turno aún. Críticos automáticos en sorpresa.", highlight: true }],
+        forgottenTip: "⚠️ Assassin: coordiná la sorpresa con el grupo ANTES del combate. Es tu recurso más valioso."
+      },
+      "Arcane Trickster": {
+        extra: [{ name: "Mage Hand Legerdemain", desc: "Mage Hand como BA para Sleight of Hand a distancia e interactuar con objetos." }]
+      },
+      "Mastermind": {
+        extra: [
+          { name: "Master of Tactics", desc: "Podés usar la acción de Help como acción adicional, Y desde 30ft (no adyacente).", highlight: true },
+          { name: "Misdirection", desc: "Redirigís la atención de una criatura a otra para ganar ventaja en ocultarte." }
+        ]
+      },
+      "Swashbuckler": {
+        extra: [
+          { name: "Fancy Footwork", desc: "Cuando atacás en cuerpo a cuerpo, el objetivo no puede hacer ataques de oportunidad contra vos ese turno.", highlight: true },
+          { name: "Rakish Audacity", desc: "Sneak Attack si estás solo con el objetivo (sin aliados adyacentes). Iniciativa + CHA mod." }
+        ]
+      },
+      "Scout": {
+        extra: [
+          { name: "Skirmisher", desc: "Cuando un enemigo termina su turno en 5ft de vos: podés moverte la mitad de tu velocidad sin provocar ataques de oportunidad.", highlight: true },
+          { name: "Survivalist", desc: "Proficiencia + Expertise en Naturaleza y Supervivencia." }
+        ]
+      },
+      "Inquisitive": {
+        extra: [
+          { name: "Insightful Fighting", desc: "Como acción adicional: INT(Insight) vs DEX(Deception) del objetivo. Si ganás, Sneak Attack contra él sin necesitar ventaja ni aliado.", highlight: true },
+        ]
+      },
+      "Phantom": {
+        extra: [
+          { name: "Whispers of the Dead", desc: "Al terminar descanso: elegís proficiencia en skill o herramienta de un alma que te susurra." },
+          { name: "Wails from the Grave", resource: "Proficiency / descanso largo", desc: "Cuando hacés Sneak Attack: dañás TAMBIÉN a otra criatura en 30ft con daño necrótico igual a la mitad de los dados de SA.", highlight: true }
+        ]
+      },
+      "Soulknife": {
+        extra: [
+          { name: "Psychic Blades", desc: "Manifestás cuchillas psíquicas. Desaparecen y reaparecen. No dejan evidencia. Daño psíquico.", highlight: true },
+          { name: "Psionic Power Dice", resource: "Se recargan en descanso largo (1 en corto)", desc: "Dados para habilidades psíquicas: Psionic Whispers, Psychic Veil, Rend Mind." }
+        ]
+      }
+    }
+  },
+
+  wizard: {
+    color: "#8e44ad", accent: "#9b59b6", bg: "#0d0018", icon: "🔮", role: "Lanzador arcano",
+    difficultyWarnings: [
+      "Clase de complejidad ALTA para nuevos jugadores",
+      "Preparar hechizos cada día requiere conocer bien tu lista",
+      "Gestionar spell slots es crítico — no los malgastes temprano"
+    ],
+    bonusActions: [
+      { name: "Hechizo de acción adicional", desc: "Solo si el hechizo dice 'acción adicional'. Si lo hacés, SOLO podés lanzar cantrips con tu acción ese turno.", highlight: true },
+    ],
+    reactions: [
+      { name: "Shield (nivel 1)", desc: "+5 CA hasta el inicio de tu próximo turno, DESPUÉS de que el enemigo tire el dado.", highlight: true },
+      { name: "Counterspell (nivel 3+)", desc: "Interrumpís un hechizo enemigo. Automático nivel 3 o menor; tira Arcana para mayores." },
+    ],
+    classFeatures: [
+      { name: "Preparar hechizos", resource: "Cada descanso largo", desc: "Preparás INT mod + nivel. Acceso a TODOS en tu spellbook.", highlight: true },
+      { name: "Arcane Recovery", resource: "1/descanso largo", desc: "En descanso corto: recuperás slots de nivel hasta la mitad de tu nivel (redondeado)." },
+      { name: "Ritual Casting", desc: "Hechizos rituales SIN slots, +10 min." },
+    ],
+    forgottenTip: "⚠️ Error crítico del Wizard nuevo: usar hechizos de alto nivel en los primeros encuentros. Guardá slots de nivel 3+ para situaciones críticas.",
+    subclasses: {
+      "Evocation": {
+        extra: [
+          { name: "Sculpt Spells (nivel 2)", desc: "Podés excluir aliados de tus hechizos de área. ¡Fireball en medio del grupo!", highlight: true },
+          { name: "Overchannel (nivel 10)", desc: "Daño máximo en hechizos nivel 1-5. En usos siguientes: daño necrótico creciente a vos." }
+        ]
+      },
+      "Illusion": {
+        extra: [{ name: "Malleable Illusions (nivel 6)", desc: "Podés cambiar ilusiones concentradas como acción. Versátil pero requiere creatividad." }],
+        forgottenTip: "⚠️ Ilusionista: hablá con tu DM sobre expectativas de las ilusiones antes de usarlas."
+      },
+      "Abjuration": {
+        extra: [{ name: "Arcane Ward", resource: "Recarga lanzando abjuración", desc: "Escudo de PS que absorbe daño. Se recarga al lanzar abjuración.", highlight: true }]
+      },
+      "Conjuration": {
+        extra: [
+          { name: "Benign Transposition (nivel 6)", resource: "1/descanso largo (o lanzando conjuración)", desc: "Teleportación hasta 30ft a espacio desocupado o intercambiás lugar con criatura aliada voluntaria.", highlight: true }
+        ]
+      },
+      "Divination": {
+        extra: [
+          { name: "Portent", resource: "Tira 2d20 al terminar descanso largo", desc: "Guardás los resultados. Podés reemplazar CUALQUIER tirada de dados (tuya o de otro) con uno de esos números. Usar ANTES de que el dado caiga.", highlight: true }
+        ],
+        forgottenTip: "⚠️ Divination: Portent es una de las habilidades más poderosas del juego. Guardá los extremos (1s y 20s) para momentos críticos."
+      },
+      "Enchantment": {
+        extra: [
+          { name: "Hypnotic Gaze", resource: "Concentración, 1/hora", desc: "Acción: una criatura adyacente queda incapacitada con velocidad 0 mientras mantengas concentración y estés en 5ft." },
+          { name: "Instinctive Charm (nivel 6)", resource: "1 uso hasta que termines descanso largo", desc: "Reacción: redirigís un ataque contra vos a otra criatura en 30ft." }
+        ]
+      },
+      "Necromancy": {
+        extra: [
+          { name: "Grim Harvest (nivel 2)", desc: "Cuando matás una criatura con hechizo: recuperás HP igual a 2× nivel del hechizo (3× si es necrótico).", highlight: true },
+          { name: "Undead Thralls (nivel 6)", desc: "Animate Dead crea una criatura extra. Tus muertos animados +nivel en HP y +bono de proficiencia en daño." }
+        ]
+      },
+      "Transmutation": {
+        extra: [
+          { name: "Transmuter's Stone", desc: "Creás una piedra con beneficio activo: Darkvision, +10 velocidad, proficiencia Constitución, resistencia a tipo de daño.", highlight: true },
+          { name: "Shapechanger (nivel 10)", resource: "1/descanso corto", desc: "Lanzás Polymorph sin slot, solo en vos mismo." }
+        ]
+      },
+      "Bladesinging": {
+        extra: [
+          { name: "Bladesong", resource: "INT mod / descanso largo", desc: "Acción adicional: +INT mod a CA, velocidad +10ft, ventaja en Acrobacia, +INT mod a CON saves para concentración. Dura 1 minuto.", highlight: true },
+          { name: "Extra Attack (nivel 6)", desc: "Dos ataques por Acción (si uno es cantrip o ataque de arma)." }
+        ]
+      },
+      "War Magic": {
+        extra: [
+          { name: "Arcane Deflection", desc: "Reacción cuando te impactan: +2 CA o +4 a save. Tradeoff: solo cantrips al siguiente turno.", highlight: true },
+          { name: "Tactical Wit", desc: "+INT mod a la iniciativa." }
+        ]
+      },
+      "Order of Scribes": {
+        extra: [
+          { name: "Awakened Spellbook", desc: "Tu spellbook está vivo. Podés cambiar el tipo de daño de hechizos al lanzarlos. Ritual casting sin tiempo extra.", highlight: true },
+          { name: "Manifest Mind", resource: "Proficiency / descanso largo", desc: "Manifestás la mente de tu spellbook como objeto brillante. Lanzás hechizos como si estuvieras en su posición." }
+        ]
+      }
+    }
+  },
+
+  cleric: {
+    color: "#f1c40f", accent: "#f39c12", bg: "#1a1500", icon: "✨", role: "Clérigo divino",
+    difficultyWarnings: [
+      "Complejidad media-alta: muchos roles (healer, combatiente, support)",
+      "El error más común: solo curar y no aprovechar el potencial ofensivo"
+    ],
+    bonusActions: [
+      { name: "Spiritual Weapon", desc: "El arma espiritual ya invocada ataca como acción adicional. Sin concentración.", highlight: true },
+      { name: "Healing Word", desc: "Curación más eficiente: BA, devuelve a alguien del inconsciente sin gastar tu acción." },
+    ],
+    reactions: [{ name: "Ataque de oportunidad", desc: "Si usás armadura y armas cuerpo a cuerpo" }],
+    classFeatures: [
+      { name: "Channel Divinity", resource: "1-3 usos / descanso corto", desc: "Cada dominio tiene 2 opciones. ¡Muchos Clérigos olvidan esta habilidad por sesiones enteras!", highlight: true },
+      { name: "Preparar hechizos", resource: "Cada descanso largo", desc: "WIS mod + nivel. Flexible." },
+    ],
+    forgottenTip: "⚠️ El error más documentado del Clérigo: olvidar Channel Divinity y los Domain Spells. Leélos al inicio de cada sesión.",
+    subclasses: {
+      "Life": {
+        extra: [
+          { name: "Disciple of Life", desc: "Hechizos de curación curan 2 + nivel del hechizo HP adicionales. Siempre activo.", highlight: true },
+          { name: "Channel Divinity: Preserve Life", desc: "Distribuís 5 × tu nivel de Clérigo en HP entre criaturas cercanas con menos de la mitad de HP máximo." }
+        ]
+      },
+      "War": {
+        extra: [
+          { name: "War Priest", resource: "WIS mod / descanso largo", desc: "Atacás como acción adicional cuando usás la acción de Ataque.", highlight: true },
+          { name: "Channel Divinity: Guided Strike", desc: "+10 a una tirada de ataque. Usalo cuando impactar es crítico." }
+        ]
+      },
+      "Knowledge": {
+        extra: [{ name: "Channel Divinity: Read Thoughts", desc: "Leer pensamientos superficiales. Potente en roleplay e investigación." }]
+      },
+      "Light": {
+        extra: [
+          { name: "Warding Flare", resource: "WIS mod / descanso largo", desc: "Reacción cuando te atacan: imponés desventaja en esa tirada de ataque.", highlight: true },
+          { name: "Channel Divinity: Radiance of the Dawn", desc: "Dispersás magia oscura y dañás criaturas hostiles cercanas (2d10 + nivel, CON save mitad)." }
+        ]
+      },
+      "Nature": {
+        extra: [
+          { name: "Acolyte of Nature", desc: "Un cantrip de Druida. Proficiencia en Animal Handling, Nature o Survival." },
+          { name: "Channel Divinity: Charm Animals and Plants", desc: "Encantás animales y plantas que fallen WIS save — quedan amigables por 1 minuto." }
+        ]
+      },
+      "Tempest": {
+        extra: [
+          { name: "Wrath of the Storm", resource: "WIS mod / descanso largo", desc: "Reacción cuando alguien te golpea en cuerpo a cuerpo: 2d8 de relámpago o trueno (DEX save mitad).", highlight: true },
+          { name: "Channel Divinity: Destructive Wrath", desc: "Daño máximo automático en hechizos de trueno o relámpago." }
+        ]
+      },
+      "Trickery": {
+        extra: [
+          { name: "Blessing of the Trickster", desc: "Tocás a un aliado voluntario: ventaja en Sigilo por 1 hora." },
+          { name: "Channel Divinity: Invoke Duplicity", desc: "Copia ilusoria de vos en 30ft. Podés lanzar hechizos como si estuvieras en su lugar. Concentración.", highlight: true }
+        ]
+      },
+      "Arcana": {
+        extra: [
+          { name: "Arcane Initiate", desc: "Dos cantrips de Wizard. Arcana como habilidad de clase." },
+          { name: "Channel Divinity: Arcane Abjuration", desc: "Turn undead pero también contra celestiales, elementales, feéricos e infernales. Potente en campaña con planos." }
+        ]
+      },
+      "Forge": {
+        extra: [
+          { name: "Blessing of the Forge", resource: "1/descanso largo", desc: "Tocás un arma o armadura no mágica: se convierte en +1 hasta tu próximo descanso largo.", highlight: true },
+          { name: "Channel Divinity: Artisan's Blessing", desc: "Creás un objeto metálico valorado en hasta 100gp en 1 hora." }
+        ]
+      },
+      "Grave": {
+        extra: [
+          { name: "Circle of Mortality", desc: "Hechizos de curación en criatura a 0 HP hacen daño máximo automático. Spare the Dying como BA a distancia.", highlight: true },
+          { name: "Channel Divinity: Path to the Grave", desc: "Reacción: siguiente ataque de un aliado contra el objetivo es un crítico automático." }
+        ]
+      },
+      "Order": {
+        extra: [
+          { name: "Voice of Authority", desc: "Cuando lanzás un hechizo en un aliado: puede atacar con reacción como bonus.", highlight: true },
+          { name: "Channel Divinity: Order's Demand", desc: "Criaturas en 30ft: WIS save o quedan charmadas por 1 minuto y sueltan objetos sostenidos." }
+        ]
+      },
+      "Peace": {
+        extra: [
+          { name: "Emboldening Bond", resource: "Proficiency / descanso largo", desc: "Vinculas hasta proficiency criaturas. Cuando atacan/check/save, pueden sumar 1d4 si están a 30ft entre sí.", highlight: true },
+          { name: "Channel Divinity: Balm of Peace", desc: "Movés tu velocidad sin provocar ataques, curando 2d6 + WIS a cada criatura que toqués." }
+        ]
+      },
+      "Twilight": {
+        extra: [
+          { name: "Eyes of Night", desc: "Darkvision 300ft y podés compartirlo con aliados que puedas ver." },
+          { name: "Channel Divinity: Twilight Sanctuary", desc: "Aura de 30ft por 1 minuto. Cada turno: criaturas dentro eligen HP temporales (1d6 + nivel) o terminar un efecto de encantamiento/miedo.", highlight: true }
+        ]
+      },
+      "Death": {
+        extra: [
+          { name: "Reaper", desc: "Cantrips con un objetivo pueden afectar a UNA criatura extra a 5ft del blanco original.", highlight: true },
+          { name: "Channel Divinity: Touch of Death", desc: "Cuando impactás con un ataque cuerpo a cuerpo: +5 × tu nivel de daño necrótico." }
+        ]
+      }
+    }
+  },
+
+  paladin: {
+    color: "#d4af37", accent: "#ffd700", bg: "#1a1500", icon: "🛡️", role: "Paladín sagrado",
+    difficultyWarnings: [
+      "Clase media: híbrido combate + magia",
+      "Gestionar spell slots Y Lay on Hands puede abrumar al principio"
+    ],
+    bonusActions: [
+      { name: "Divine Smite", desc: "NO es acción adicional — se activa DESPUÉS de golpear. Gastás un spell slot para daño radiante extra.", highlight: true },
+      { name: "Smites de hechizo", desc: "Thunderous Smite, Wrathful Smite, etc.: ESTOS sí son BA para activar ANTES de atacar." },
+    ],
+    reactions: [{ name: "Ataque de oportunidad", desc: "Con altos stats de CHA/STR, una de las mejores del grupo" }],
+    classFeatures: [
+      { name: "Divine Smite", resource: "Gasta spell slots", desc: "Se activa al IMPACTAR, no al atacar. Decidís smite DESPUÉS de ver el dado.", highlight: true },
+      { name: "Lay on Hands", resource: "5 × nivel / descanso largo", desc: "Pool de curación. 1 HP por punto. Cura enfermedades/venenos (cuesta 5 pts)." },
+      { name: "Aura of Protection (nivel 6)", desc: "CHA modifier (mín +1) a todas las saves de aliados en 10ft. ¡Siempre activa!" },
+    ],
+    forgottenTip: "⚠️ Confundir Thunderous Smite (BA, ANTES) con Divine Smite (DESPUÉS de impactar) es el error clásico del Paladín.",
+    subclasses: {
+      "Oath of Devotion": {
+        extra: [
+          { name: "Channel Divinity: Sacred Weapon", desc: "+CHA modifier a ataques por 1 minuto." },
+          { name: "Channel Divinity: Turn the Unholy", desc: "Fiends y undead en 30ft: WIS save o huyen por 1 minuto." }
+        ]
+      },
+      "Oath of Vengeance": {
+        extra: [
+          { name: "Vow of Enmity", resource: "Channel Divinity", desc: "Ventaja en todos tus ataques contra un objetivo. Devastador con Smite.", highlight: true },
+          { name: "Relentless Avenger (nivel 7)", desc: "Al golpear con ataque de oportunidad: movés hasta mitad velocidad como parte de esa reacción." }
+        ]
+      },
+      "Oath of the Ancients": {
+        extra: [
+          { name: "Channel Divinity: Nature's Wrath", desc: "Criatura en 10ft: STR o DEX save o queda restringida hasta el final de su próximo turno." },
+          { name: "Aura of Warding (nivel 7)", desc: "Vos y aliados en 10ft: resistencia a daño de hechizos.", highlight: true }
+        ]
+      },
+      "Oath of Conquest": {
+        extra: [
+          { name: "Channel Divinity: Conquering Presence", desc: "Criaturas en 30ft: WIS save o asustadas por 1 minuto." },
+          { name: "Aura of Conquest (nivel 7)", desc: "Criaturas asustadas por vos que estén en 10ft tienen velocidad 0 y reciben daño psíquico cada turno.", highlight: true }
+        ],
+        forgottenTip: "⚠️ Oath of Conquest: combiná Aura of Conquest con cualquier efecto de miedo para inmovilizar completamente al enemigo."
+      },
+      "Oath of Redemption": {
+        extra: [
+          { name: "Channel Divinity: Emissary of Peace", desc: "+5 a Persuasión por 10 minutos." },
+          { name: "Rebuke the Violent (nivel 7)", desc: "Reacción cuando un aliado recibe daño de otro: el atacante recibe el mismo daño radiante.", highlight: true }
+        ]
+      },
+      "Oath of Glory": {
+        extra: [
+          { name: "Channel Divinity: Inspiring Smite", resource: "Tras Divine Smite", desc: "Distribuís 2d8 + nivel de Paladín en HP temporales entre criaturas que puedas ver en 30ft.", highlight: true },
+          { name: "Aura of Alacrity (nivel 7)", desc: "+10ft de velocidad a vos y aliados que empiecen su turno en 5ft." }
+        ]
+      },
+      "Oathbreaker": {
+        extra: [
+          { name: "Channel Divinity: Dreadful Aspect", desc: "Criaturas a elección en 30ft: WIS save o asustadas por 1 minuto." },
+          { name: "Aura of Hate (nivel 7)", desc: "Vos y undead/fiends amigos en 10ft: +CHA modifier a tiradas de daño cuerpo a cuerpo.", highlight: true }
+        ]
+      }
+    }
+  },
+
+  ranger: {
+    color: "#16a085", accent: "#1abc9c", bg: "#001510", icon: "🏹", role: "Explorador del bosque",
+    difficultyWarnings: [
+      "Complejidad media: habilidades situacionales según campaña",
+      "Favored Enemy y Natural Explorer dependen mucho del DM"
+    ],
+    bonusActions: [
+      { name: "Hunter's Mark (mover)", desc: "Como BA podés mover la marca a otro objetivo cuando el marcado muere/queda inconsciente." },
+      { name: "Offhand Attack", desc: "Con dos armas ligeras, atacás con la secundaria como BA" },
+    ],
+    reactions: [{ name: "Ataque de oportunidad", desc: "Con arma cuerpo a cuerpo" }],
+    classFeatures: [
+      { name: "Hunter's Mark", resource: "Usa Concentración", desc: "Daño extra vs objetivo marcado. Requiere CON save si tomás daño.", highlight: true },
+      { name: "Favored Enemy", desc: "Ventaja en Survival para rastrear e Intelligence para recordar info." },
+    ],
+    forgottenTip: "⚠️ Hunter's Mark requiere Concentración. Si querés Pass Without Trace u otro hechizo de concentración, tenés que elegir.",
+    subclasses: {
+      "Hunter": {
+        extra: [{ name: "Hunter's Prey (nivel 3)", desc: "Colossus Slayer (1d8 extra 1 vez/turno), Giant Killer (reacción vs gigantes), Horde Breaker (segundo objetivo adyacente).", highlight: true }]
+      },
+      "Beast Master": {
+        extra: [{ name: "Ranger's Companion", desc: "Tu animal usa su REACCIÓN para atacar cuando vos atacás. Sin instrucción: acción Dodge." }],
+        forgottenTip: "⚠️ Beast Master: el compañero es una reacción, no una acción independiente."
+      },
+      "Gloom Stalker": {
+        extra: [
+          { name: "Dread Ambusher (nivel 3)", desc: "Primera ronda de combate: +10ft de velocidad, ataque extra, +1d8 daño en ese ataque.", highlight: true },
+          { name: "Umbral Sight", desc: "Darkvision 60ft. Invisible para criaturas que dependan de darkvision en oscuridad." }
+        ],
+        forgottenTip: "⚠️ Gloom Stalker es la subclase de Ranger más fuerte. La primera ronda de combate con sorpresa puede acabar encuentros."
+      },
+      "Horizon Walker": {
+        extra: [
+          { name: "Planar Warrior (nivel 3)", resource: "BA", desc: "Designás objetivo en 5ft: el primer golpe hace fuerza de daño (en vez del tipo normal) + 1d8 fuerza extra.", highlight: true },
+          { name: "Ethereal Step (nivel 7)", resource: "1/turno", desc: "BA: entrar al plano etéreo y reaparecer en 30ft al final de tu turno." }
+        ]
+      },
+      "Monster Slayer": {
+        extra: [
+          { name: "Hunter's Sense (nivel 3)", resource: "WIS mod / descanso largo", desc: "Conocés inmunidades, resistencias y vulnerabilidades de la criatura." },
+          { name: "Slayer's Prey", desc: "BA: marcás al objetivo. Tu primer ataque por turno hace +1d6 daño a él.", highlight: true }
+        ]
+      },
+      "Fey Wanderer": {
+        extra: [
+          { name: "Dreadful Strikes", desc: "Arma hace +1d4 daño psíquico (+1d6 en nivel 11). Solo 1 vez por turno.", highlight: true },
+          { name: "Otherworldly Glamour", desc: "+WIS modifier en Carisma. Proficiencia en Deception, Performance o Persuasion." }
+        ]
+      },
+      "Swarmkeeper": {
+        extra: [
+          { name: "Gathered Swarm", desc: "Un enjambre te rodea. Después de golpear: elegís empujar 15ft al objetivo, moverlo, o recibir 1d6 de daño piercing el objetivo.", highlight: true },
+        ]
+      }
+    }
+  },
+
+  warlock: {
+    color: "#6c3483", accent: "#8e44ad", bg: "#0d0018", icon: "👁️", role: "Pactante del más allá",
+    difficultyWarnings: [
+      "⚠️ ALTA complejidad para nuevos jugadores",
+      "Los Eldritch Invocations son fáciles de olvidar",
+      "Spell slots se recuperan en descanso CORTO (no largo)"
+    ],
+    bonusActions: [
+      { name: "Invocaciones de BA", desc: "Algunas Eldritch Invocations otorgan habilidades de BA. Revisá cuáles tenés." },
+    ],
+    reactions: [
+      { name: "Counterspell", desc: "Interrumpís un hechizo enemigo." },
+    ],
+    classFeatures: [
+      { name: "Eldritch Blast", resource: "Cantrip — sin límite", desc: "Con Agonizing Blast (+CHA al daño) es tu DPS central. ¡Recordá tus invocaciones que lo modifican!", highlight: true },
+      { name: "Spell Slots", resource: "Descanso CORTO", desc: "1-2 slots de alto nivel. Pedí descansos cortos frecuentemente.", highlight: true },
+      { name: "Eldritch Invocations", desc: "Siempre activas (salvo que digan lo contrario). Listalás donde las veas." },
+    ],
+    forgottenTip: "⚠️ El error #1 del Warlock: olvidar pedir descansos CORTOS para recuperar los spell slots.",
+    subclasses: {
+      "The Fiend": {
+        extra: [
+          { name: "Dark One's Blessing", desc: "Al matar criatura hostil: CHA mod + nivel Warlock en HP temporales.", highlight: true },
+          { name: "Fiendish Resilience (nivel 10)", desc: "Resistencia elegida a un tipo de daño. Cambia en descanso corto." }
+        ]
+      },
+      "The Archfey": {
+        extra: [{ name: "Fey Presence", resource: "1/descanso corto", desc: "Cada criatura en 10ft: WIS save o charmada/asustada por 1 turno." }]
+      },
+      "The Great Old One": {
+        extra: [{ name: "Awakened Mind", desc: "Comunicación telepática con cualquier criatura en 30ft." }]
+      },
+      "The Celestial": {
+        extra: [
+          { name: "Bonus Cantrips", desc: "Sacred Flame y Light a tu lista." },
+          { name: "Healing Light", resource: "1 + nivel / descanso largo dados d6", desc: "BA: gastás dados del pool para curar a una criatura en 60ft. Usá dados en lugar de spell slots para curar.", highlight: true }
+        ]
+      },
+      "The Hexblade": {
+        extra: [
+          { name: "Hexblade's Curse", resource: "1/descanso corto", desc: "BA: marcás criatura. Bono de proficiencia a sus tiradas de daño. Crítico 19-20. Al matarlo: recuperás HP = nivel + CHA mod.", highlight: true },
+          { name: "Hex Warrior", desc: "Proficiencia en armadura media, escudos y armas marciales. Podés usar CHA para atacar con un arma marcial." }
+        ],
+        forgottenTip: "⚠️ Hexblade es la subclase de Warlock más poderosa por combinar CHA con ataque cuerpo a cuerpo. Usá CHA para TODO — ataque, daño, AC (con Hexblade/Pact of the Blade)."
+      },
+      "The Fathomless": {
+        extra: [
+          { name: "Tentacle of the Deeps", resource: "1/descanso largo", desc: "BA: tentáculo en espacio desocupado a 60ft. Hostiles en 10ft: 1d8 daño frío y -10ft de velocidad.", highlight: true },
+          { name: "Gift of the Sea", desc: "Velocidad nadando 40ft. Respiras bajo el agua." }
+        ]
+      },
+      "The Genie": {
+        extra: [
+          { name: "Genie's Vessel", desc: "Un objeto pequeño te permite usar Bottled Respite (entrar a descansar adentro), Genie's Wrath (daño extra según tipo de genio) y eventualmente un deseo.", highlight: true },
+        ]
+      }
+    }
+  },
+
+  bard: {
+    color: "#2980b9", accent: "#3498db", bg: "#000d1a", icon: "🎸", role: "Bardo inspirador",
+    difficultyWarnings: [
+      "Complejidad alta para nuevos jugadores",
+      "Rol de support activo — pensás en tus aliados además de en vos",
+    ],
+    bonusActions: [
+      { name: "Bardic Inspiration", resource: "CHA mod / descanso largo (corto en nivel 5)", desc: "Dado (d6→d12) a un aliado para ataque, save o ability check. ¡Distribuilos antes del combate!", highlight: true },
+      { name: "Healing Word", desc: "El mejor hechizo de curación: BA, devuelve del inconsciente." },
+    ],
+    reactions: [
+      { name: "Cutting Words (nivel 3)", desc: "Gastás un dado de Inspiración para RESTAR el resultado de ataque/check/daño de un enemigo.", highlight: true },
+    ],
+    classFeatures: [
+      { name: "Bardic Inspiration", resource: "CHA mod / descanso", desc: "Distribuílos al inicio del combate. Recurso central.", highlight: true },
+      { name: "Jack of All Trades (nivel 2)", desc: "Mitad del proficiency bonus a skills sin proficiencia. ¡Siempre aplica!" },
+      { name: "Expertise (nivel 3)", desc: "Doble proficiency en 2 skills." },
+    ],
+    forgottenTip: "⚠️ El Bard: guardar Bardic Inspiration para 'el momento perfecto' y nunca usarlos. Se recuperan en descanso largo (corto en nivel 5). ¡Usálos!",
+    subclasses: {
+      "Lore": {
+        extra: [
+          { name: "Cutting Words", desc: "Reacción para restar dado de Inspiración a tirada de enemigo.", highlight: true },
+          { name: "Additional Magical Secrets (nivel 6)", desc: "2 hechizos de CUALQUIER clase. Las mejores: Counterspell, Animate Objects, Fireball." }
+        ]
+      },
+      "Valor": {
+        extra: [
+          { name: "Combat Inspiration", desc: "Dados de Inspiración también sirven para CA (reacción) o daño de arma." },
+          { name: "Extra Attack (nivel 6)", desc: "Dos ataques por Acción." }
+        ]
+      },
+      "Swords": {
+        extra: [
+          { name: "Blade Flourish", desc: "Al atacar con arma: podés gastar un dado de Inspiración para Defensive (+CA), Slashing (daño de área), o Mobile (+movimiento y sin ataque de oportunidad).", highlight: true },
+          { name: "Extra Attack (nivel 6)", desc: "Dos ataques por Acción." }
+        ]
+      },
+      "Glamour": {
+        extra: [
+          { name: "Mantle of Inspiration", resource: "Gasta un dado de Inspiración", desc: "BA: aliados en 60ft ganan HP temporales igual al resultado + pueden moverse hasta su velocidad sin provocar ataques.", highlight: true },
+          { name: "Enthralling Performance (nivel 3)", resource: "1/descanso corto", desc: "10 minutos de actuación: hasta CHA mod criaturas quedan fascinadas." }
+        ]
+      },
+      "Whispers": {
+        extra: [
+          { name: "Psychic Blades", resource: "Gasta un dado de Inspiración", desc: "Al impactar con arma: daño psíquico extra igual al dado. El objetivo está asustado hasta el final de su próximo turno.", highlight: true },
+          { name: "Words of Terror (nivel 3)", resource: "1/descanso corto", desc: "1 minuto de conversación: la criatura hace WIS save o queda asustada de vos por 1 hora." }
+        ]
+      },
+      "Creation": {
+        extra: [
+          { name: "Performance of Creation", resource: "CHA mod / descanso largo", desc: "BA: creás un objeto no mágico en 10ft que vale hasta 20gp × nivel de Bard. Dura horas.", highlight: true },
+        ]
+      },
+      "Eloquence": {
+        extra: [
+          { name: "Silver Tongue", desc: "Siempre tratás como mínimo 10 en Persuasion y Deception.", highlight: true },
+          { name: "Unsettling Words", resource: "Gasta dado de Inspiración", desc: "BA: el objetivo resta el dado de su próxima save." }
+        ],
+        forgottenTip: "⚠️ Eloquence Bard: con Silver Tongue + CHA alto + Expertise, tus checks de carisma son imbatibles. Hablá más en lugar de pelear."
+      }
+    }
+  },
+
+  druid: {
+    color: "#27ae60", accent: "#2ecc71", bg: "#001a05", icon: "🌿", role: "Druida de la naturaleza",
+    difficultyWarnings: [
+      "⚠️ Clase de mayor complejidad del juego para nuevos jugadores",
+      "Wild Shape requiere conocer estadísticas de bestias",
+      "Preparar hechizos de lista enorme es exigente"
+    ],
+    bonusActions: [
+      { name: "Wild Shape", desc: "Nivel 2: Acción. Moon Druid nivel 2+: Acción Adicional. Verificá cuál te aplica.", highlight: true },
+    ],
+    reactions: [{ name: "Ataque de oportunidad", desc: "Tanto en forma humana como en Wild Shape" }],
+    classFeatures: [
+      { name: "Wild Shape", resource: "2 usos / descanso corto", desc: "Los HP de la bestia son un buffer. Al llegar a 0, volvés con los HP que tenías.", highlight: true },
+      { name: "Spellcasting", resource: "Descanso largo", desc: "WIS mod + nivel preparados de la lista completa." },
+    ],
+    forgottenTip: "⚠️ Wild Shape: tus HP de bestia son un escudo extra. No podés lanzar hechizos en Wild Shape (salvo Moon Druid nivel 18).",
+    subclasses: {
+      "Moon": {
+        extra: [
+          { name: "Combat Wild Shape", desc: "Transformarte como Acción Adicional. Acceso a bestias de CR mucho más alto.", highlight: true },
+          { name: "Wildshape Healing", resource: "Gasta spell slot", desc: "En Wild Shape: recuperás 1d8 HP por nivel del slot gastado (BA). Tremendo sustain." }
+        ],
+        forgottenTip: "⚠️ Moon Druid en Wild Shape puede gastar spell slots para recuperar HP. Muchos jugadores no saben esto."
+      },
+      "Land": {
+        extra: [
+          { name: "Natural Recovery", resource: "1/descanso largo", desc: "En descanso corto: recuperás slots de nivel hasta la mitad del tuyo." },
+          { name: "Circle Spells", desc: "Hechizos siempre preparados según tu terreno. No gastan espacios de preparación.", highlight: true }
+        ]
+      },
+      "Dreams": {
+        extra: [
+          { name: "Balm of the Summer Court", resource: "WIS mod × nivel / descanso largo dados", desc: "BA: gastás dados para curar hasta WIS mod × nivel de HP entre aliados visibles en 120ft.", highlight: true },
+          { name: "Hearth of Moonlight and Shadow", desc: "Al acampar: creas refugio mágico invisible que te protege y permite descanso sin interrupciones." }
+        ]
+      },
+      "Spores": {
+        extra: [
+          { name: "Halo of Spores", desc: "Reacción cuando una criatura entra en 10ft: 1d4 daño necrótico (escala con nivel), CON save anula.", highlight: true },
+          { name: "Symbiotic Entity", resource: "2 usos Wild Shape", desc: "En vez de transformarte: 4 × nivel HP temporales, Halo of Spores +1d6, ataques con arma +1d6 necrótico." }
+        ],
+        forgottenTip: "⚠️ Spores Druid: Symbiotic Entity es mejor que Wild Shape en combate muchas veces porque te permite lanzar hechizos."
+      },
+      "Stars": {
+        extra: [
+          { name: "Starry Form", resource: "2 usos Wild Shape", desc: "En vez de bestia: Archer (cantrip bonus + 1d8+WIS curación), Chalice (curar aliados con hechizos de curación), Dragon (concentración con ventaja, INT light).", highlight: true },
+        ]
+      },
+      "Wildfire": {
+        extra: [
+          { name: "Summon Wildfire Spirit", resource: "2 usos Wild Shape", desc: "Invocás un espíritu de fuego. Puede teleportar criaturas voluntarias, atacar con fuego.", highlight: true },
+          { name: "Enhanced Bond", desc: "Desde tu espíritu podés lanzar hechizos de daño/curación como si estuvieras en su posición." }
+        ]
+      },
+      "Shepherd": {
+        extra: [
+          { name: "Speech of the Woods", desc: "Podés comunicarte con bestias y plantas. Aprenden Silvano." },
+          { name: "Spirit Totem", resource: "1/descanso corto", desc: "BA: invocás un espíritu en 60ft. Bear (HP temporales), Hawk (reacción de Ayuda, ataques con ventaja), Unicorn (curación potenciada).", highlight: true }
+        ]
+      }
+    }
+  },
+
+  monk: {
+    color: "#e67e22", accent: "#f39c12", bg: "#1a0a00", icon: "👊", role: "Monje marcial",
+    difficultyWarnings: [
+      "Complejidad media-alta: Ki Points son un recurso frágil",
+      "Maximizá DEX y WIS — gestión de ability scores crítica"
+    ],
+    bonusActions: [
+      { name: "Flurry of Blows", resource: "1 Ki Point", desc: "Después de usar Ataque: dos ataques sin armas adicionales.", highlight: true },
+      { name: "Patient Defense", resource: "1 Ki Point", desc: "Dodge como acción adicional." },
+      { name: "Step of the Wind", resource: "1 Ki Point", desc: "Dash o Disengage como BA. Velocidad duplicada ese turno." },
+    ],
+    reactions: [
+      { name: "Deflect Missiles (nivel 3)", desc: "Reducís daño de proyectil en 1d10+DEX+nivel. A 0: podés lanzarlo de vuelta.", highlight: true },
+    ],
+    classFeatures: [
+      { name: "Ki Points", resource: "= nivel / descanso corto", desc: "Tu recurso central. Se recuperan en descanso CORTO.", highlight: true },
+      { name: "Martial Arts", desc: "Usá DEX para atacar. Después de atacar con arma: atacás sin arma como BA (gratis)." },
+      { name: "Stunning Strike (nivel 5)", resource: "1 Ki Point", desc: "Después de golpear: CON save o queda Stunned hasta tu próximo turno. Potentísimo.", highlight: true },
+    ],
+    forgottenTip: "⚠️ Monk: gastar Ki en Flurry constantemente sin guardar para Stunning Strike cuando aparece el jefe es el error clásico.",
+    subclasses: {
+      "Way of the Open Hand": {
+        extra: [{ name: "Open Hand Technique", desc: "Con Flurry: empujar 15ft, tumbar (prono), o prevenir reacciones del objetivo.", highlight: true }]
+      },
+      "Way of Shadow": {
+        extra: [
+          { name: "Shadow Arts", resource: "Ki Points", desc: "Lanzás Pass Without Trace, Silence, Darkness o Darkvision con Ki." },
+          { name: "Shadow Step (nivel 6)", desc: "BA: teletransportación entre áreas de oscuridad. Ventaja en primer ataque." }
+        ]
+      },
+      "Way of the Four Elements": {
+        extra: [
+          { name: "Elemental Disciplines", desc: "Gastás Ki para efectos elementales: Fangs of the Fire Snake, Fist of Unbroken Air, Rush of the Gale Spirits, Shape the Flowing River, Sweeping Cinder Strike...", highlight: true },
+        ],
+        forgottenTip: "⚠️ Four Elements: los Disciplines son costosos en Ki. Usálos selectivamente — son poderosos pero drenan recursos rápido."
+      },
+      "Way of the Drunken Master": {
+        extra: [
+          { name: "Drunken Technique", desc: "Con Flurry: ganás beneficio de Dodge y +10ft de movimiento ese turno.", highlight: true },
+          { name: "Tipsy Sway (nivel 6)", desc: "Reacción cuando erran un ataque melee: redirigís el ataque a otra criatura adyacente." }
+        ]
+      },
+      "Way of the Kensei": {
+        extra: [
+          { name: "Path of the Kensei", desc: "Elegís 1-2 armas como armas Kensei (pueden ser no-monk weapons). Ranged: +1d4 daño. Melee: +2 CA si la sostenés.", highlight: true },
+          { name: "One with the Blade (nivel 6)", resource: "1 Ki Point", desc: "Tus armas Kensei se consideran mágicas. Kensei's Shot: BA, +1d4 daño a ataque a distancia." }
+        ]
+      },
+      "Way of the Sun Soul": {
+        extra: [
+          { name: "Radiant Sun Bolt", desc: "Cantrip de rayo radiante a distancia (DEX para atacar, 1d4+DEX radiante). Gastás Ki para ataques adicionales.", highlight: true },
+          { name: "Searing Arc Strike (nivel 6)", resource: "2+ Ki", desc: "Después de Ataque: lanzás Burning Hands (sin slot). Más Ki = más nivel del hechizo." }
+        ]
+      },
+      "Way of the Astral Self": {
+        extra: [
+          { name: "Arms of the Astral Self", resource: "1 Ki Point", desc: "BA: manifestás brazos astrales. WIS para ataques (sin arma) en lugar de STR/DEX. Alcance 5ft. Extra: derribás o empujás.", highlight: true },
+        ]
+      },
+      "Way of Mercy": {
+        extra: [
+          { name: "Hands of Healing", resource: "1 Ki Point", desc: "BA o con Flurry: curás 1d10+WIS HP a una criatura." },
+          { name: "Hands of Harm", resource: "1 Ki Point", desc: "Con Martial Arts: dañás adicional 1d6+WIS necrótico + imponés una enfermedad.", highlight: true }
+        ]
+      }
+    }
+  },
+
+  sorcerer: {
+    color: "#c0392b", accent: "#e74c3c", bg: "#1a0505", icon: "🌟", role: "Lanzador innato",
+    difficultyWarnings: [
+      "Complejidad media: spell slots limitados y lista fija",
+      "No preparás hechizos — los conocés para siempre. Elegí bien",
+      "Administrar Sorcery Points es clave"
+    ],
+    bonusActions: [
+      { name: "Quickened Spell", resource: "2 Sorcery Points", desc: "Lanzás un hechizo que requiere Acción como Acción Adicional.", highlight: true },
+      { name: "Bonus Action Spells", desc: "Si lanzás hechizo con BA, solo cantrips con tu acción." },
+    ],
+    reactions: [
+      { name: "Ataque de oportunidad", desc: "Disponible pero raramente conveniente" },
+    ],
+    classFeatures: [
+      { name: "Sorcery Points", resource: "= nivel / descanso largo", desc: "Convertís slots en Sorcery Points (1 pt/nivel) y viceversa. Base para Metamagic.", highlight: true },
+      { name: "Metamagic", resource: "Gasta Sorcery Points", desc: "Elegís 2 al nivel 3. Twinned (mismo hechizo en 2 blancos), Quickened (BA), Subtle (sin componentes verbales), Empowered, Heightened, Extended, Careful, Distant.", highlight: true },
+      { name: "Spells Known", desc: "Lista fija — no podés cambiarlos entre sesiones (salvo al subir nivel). Son tu identidad. Elegí con cuidado." },
+    ],
+    forgottenTip: "⚠️ El error clásico del Sorcerer: olvidar las Metamagic. Quickened + Fireball o Twinned + Haste son combos que definen la clase.",
+    subclasses: {
+      "Draconic Bloodline": {
+        extra: [
+          { name: "Draconic Resilience", desc: "CA base 13 + DEX sin armadura. +1 HP por nivel.", highlight: true },
+          { name: "Elemental Affinity (nivel 6)", desc: "CHA modifier de bonus en daño del tipo dracónico elegido." }
+        ]
+      },
+      "Wild Magic": {
+        extra: [
+          { name: "Wild Magic Surge", desc: "1 en d20 después de lanzar hechizo: tira en tabla Wild Magic Surge. Efectos caóticos.", highlight: true },
+          { name: "Tides of Chaos", resource: "1/descanso largo", desc: "Ventaja en ataque, check o save. Puede provocar Wild Surge automáticamente." }
+        ],
+        forgottenTip: "⚠️ Wild Magic: Tides of Chaos es tremendo. Muchos jugadores la reservan 'por las dudas' y nunca la usan. ¡Usala!"
+      },
+      "Shadow Magic": {
+        extra: [
+          { name: "Eyes of the Dark", resource: "1 Sorcery Point", desc: "Darkvision 120ft. Darkness sin materiales y podés ver a través de ella.", highlight: true },
+          { name: "Strength of the Grave", resource: "1/descanso largo", desc: "Al bajar a 0 HP: CHA save DC 5 + daño recibido → quedás en 1 HP." }
+        ]
+      },
+      "Divine Soul": {
+        extra: [
+          { name: "Divine Magic", desc: "Acceso a hechizos de Clérigo además de Sorcerer. ¡Lista enorme!", highlight: true },
+          { name: "Empowered Healing (nivel 6)", resource: "1 Sorcery Point", desc: "Rerolleás dados de curación propios o de aliados adyacentes." }
+        ]
+      },
+      "Storm Sorcery": {
+        extra: [
+          { name: "Tempestuous Magic", desc: "Después de lanzar hechizo nivel 1+: volás 10ft como BA sin provocar ataques de oportunidad." },
+          { name: "Heart of the Storm (nivel 6)", desc: "Resistencia a trueno y relámpago. CHA mod de bonus en daño de esos tipos.", highlight: true }
+        ]
+      },
+      "Aberrant Mind": {
+        extra: [
+          { name: "Psionic Spells", desc: "Lista expandida de hechizos psíquicos siempre conocidos. No gastan tu cupo.", highlight: true },
+          { name: "Telepathic Speech", desc: "Comunicación telepática con criatura visible en 30ft por INT o CHA minutos." }
+        ]
+      },
+      "Clockwork Soul": {
+        extra: [
+          { name: "Restore Balance", resource: "CHA mod / descanso largo", desc: "Reacción: cancelás ventaja o desventaja en una tirada que veas. Podés usarlo a favor tuyo o de aliados.", highlight: true },
+          { name: "Clockwork Spells", desc: "Lista expandida de hechizos de abjuración/transmutación siempre conocidos." }
+        ]
+      }
+    }
+  }
+};
+
+const UNIVERSAL_RULES = [
+  {
+    title: "Tu turno de combate",
+    items: [
+      { label: "MOVIMIENTO", desc: "Hasta tu velocidad (ej: 30ft). Podés dividirlo antes y después de tu acción.", color: "#3498db" },
+      { label: "ACCIÓN", desc: "Atacar, lanzar hechizo, Dash, Dodge, Help, Hide, Ready...", color: "#e74c3c" },
+      { label: "ACCIÓN ADICIONAL", desc: "Solo si una habilidad o hechizo te la otorga. No es intercambiable con la acción.", color: "#f39c12" },
+      { label: "REACCIÓN", desc: "1 vez por ronda (¡incluso fuera de tu turno!). Se recupera al inicio de tu turno.", color: "#9b59b6" },
+      { label: "INTERACCIÓN GRATIS", desc: "1 vez por turno: sacar/guardar arma, abrir puerta, recoger objeto. ¡La gente lo olvida!", color: "#27ae60" },
+    ]
+  },
+  {
+    title: "Lo que la gente más olvida",
+    items: [
+      { label: "Ayudar (Help)", desc: "Acción para dar ventaja a un aliado en su próximo ataque contra enemigo adyacente a vos." },
+      { label: "Empujar/Agarre", desc: "En lugar de un ataque: STR(Athletics) vs STR(Athletics)/DEX(Acrobatics). Empujás 5ft o agarrás." },
+      { label: "Cobertura media", desc: "+2 CA y tiradas DEX. Cualquier obstáculo parcial entre vos y el atacante." },
+      { label: "Cobertura total", desc: "+5 CA. No podés ser target directo de ataques." },
+      { label: "Percepción Pasiva", desc: "10 + WIS mod + proficiencia. Siempre activa." },
+      { label: "Concentración", desc: "Si tomás daño: CON save DC 10 o mitad del daño (el mayor). Perder concentración = perder el hechizo." },
+    ]
+  }
+];
+
+// ─── Parsear hoja de personaje ───
+function parseCharacterSheet(json) {
+  // Foundry VTT actor JSON
+  if (json.items && Array.isArray(json.items)) {
+    const classItem = json.items.find(i => i.type === 'class');
+    const subclassItem = json.items.find(i => i.type === 'subclass');
+    const name = json.name || null;
+    const level = classItem?.system?.levels || classItem?.system?.level || null;
+    const rawClass = (classItem?.name || json.system?.details?.originalClass || '').toLowerCase().trim();
+    const rawSubclass = subclassItem?.name || '';
+    return { name, level, rawClass, rawSubclass, source: 'Foundry VTT' };
+  }
+  // Genérico
+  const rawClass = (json.class || json.className || json.classes?.[0]?.name || '').toLowerCase().trim();
+  if (rawClass) {
+    return {
+      name: json.name || json.charName || null,
+      level: json.level || json.charLevel || json.classes?.[0]?.level || null,
+      rawClass,
+      rawSubclass: json.subclass || json.subclassName || '',
+      source: 'JSON genérico'
+    };
+  }
+  return null;
+}
+
+function Section({ title, color, accent, children }) {
+  return React.createElement('div', {
+    style: { border: `1px solid ${color}30`, borderRadius: 6, overflow: 'hidden', height: '100%' }
+  },
+    React.createElement('div', {
+      style: { padding: '6px 12px', background: `${color}20`, borderBottom: `1px solid ${color}30`, fontSize: 11, fontWeight: 'bold', letterSpacing: '0.08em', color: accent }
+    }, title),
+    React.createElement('div', { style: { padding: 10, display: 'flex', flexDirection: 'column', gap: 6 } }, children)
+  );
+}
+
+function ActionCard({ name, desc, resource, highlight, accentColor, highlightColor }) {
+  return React.createElement('div', {
+    style: { padding: '7px 10px', background: highlight ? `${highlightColor}18` : '#ffffff06', border: `1px solid ${highlight ? highlightColor + '50' : '#ffffff15'}`, borderRadius: 4 }
+  },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 } },
+      React.createElement('span', { style: { fontSize: 12, fontWeight: 'bold', color: highlight ? accentColor : '#ddd' } }, name),
+      resource && React.createElement('span', { style: { fontSize: 10, padding: '1px 6px', background: `${highlightColor}25`, border: `1px solid ${highlightColor}40`, borderRadius: 10, color: accentColor } }, resource)
+    ),
+    React.createElement('div', { style: { fontSize: 12, color: '#aaa', lineHeight: 1.4 } }, desc)
+  );
+}
+
+function FeatureCard({ name, desc, resource, highlight, accentColor, highlightColor }) {
+  return React.createElement('div', {
+    style: { padding: '10px 12px', background: highlight ? `${highlightColor}12` : '#ffffff05', border: `1px solid ${highlight ? highlightColor + '40' : '#ffffff10'}`, borderRadius: 6 }
+  },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 } },
+      highlight && React.createElement('span', { style: { color: accentColor, fontSize: 14 } }, '★'),
+      React.createElement('span', { style: { fontSize: 14, fontWeight: 'bold', color: highlight ? accentColor : '#ddd' } }, name),
+      resource && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 11, padding: '2px 8px', background: `${highlightColor}20`, border: `1px solid ${highlightColor}40`, borderRadius: 10, color: accentColor } }, resource)
+    ),
+    React.createElement('div', { style: { fontSize: 13, color: '#bbb', lineHeight: 1.5 } }, desc)
+  );
+}
+
+function CheatSheet() {
+  const [selectedClass, setSelectedClass] = useState('fighter');
+  const [selectedSubclass, setSelectedSubclass] = useState(null);
+  const [charName, setCharName] = useState('Tu Personaje');
+  const [charLevel, setCharLevel] = useState(1);
+  const [editingName, setEditingName] = useState(false);
+  const [activeTab, setActiveTab] = useState('combat');
+  const [animKey, setAnimKey] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [importMsg, setImportMsg] = useState(null); // { text, ok }
+
+  const cls = CLASS_DATA[selectedClass];
+  const subclasses = Object.keys(cls.subclasses);
+  const subData = selectedSubclass ? cls.subclasses[selectedSubclass] : null;
+
+  useEffect(() => { setSelectedSubclass(null); setAnimKey(k => k + 1); }, [selectedClass]);
+
+  // ─── Drag & Drop ───
+  const handleDragOver = useCallback(e => { e.preventDefault(); setDragOver(true); }, []);
+  const handleDragLeave = useCallback(e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }, []);
+
+  const handleDrop = useCallback(e => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!file.name.endsWith('.json')) {
+      setImportMsg({ text: '❌ Solo se aceptan archivos .json', ok: false });
+      setTimeout(() => setImportMsg(null), 3000);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const parsed = parseCharacterSheet(data);
+        if (!parsed || !parsed.rawClass) {
+          setImportMsg({ text: '❌ No se encontró información de clase', ok: false });
+          setTimeout(() => setImportMsg(null), 3500);
+          return;
+        }
+        // Buscar clase
+        const classKey = Object.keys(CLASS_DATA).find(k =>
+          k === parsed.rawClass ||
+          k.includes(parsed.rawClass) ||
+          parsed.rawClass.includes(k)
+        );
+        if (!classKey) {
+          setImportMsg({ text: `❌ Clase "${parsed.rawClass}" no reconocida`, ok: false });
+          setTimeout(() => setImportMsg(null), 3500);
+          return;
+        }
+        setSelectedClass(classKey);
+        if (parsed.name) setCharName(parsed.name);
+        if (parsed.level) setCharLevel(Number(parsed.level));
+        // Buscar subclase
+        if (parsed.rawSubclass) {
+          const subKeys = Object.keys(CLASS_DATA[classKey].subclasses);
+          const subKey = subKeys.find(s =>
+            s.toLowerCase() === parsed.rawSubclass.toLowerCase() ||
+            parsed.rawSubclass.toLowerCase().includes(s.toLowerCase()) ||
+            s.toLowerCase().includes(parsed.rawSubclass.toLowerCase())
+          );
+          if (subKey) setSelectedSubclass(subKey);
+        }
+        const displayName = parsed.name || 'Personaje';
+        setImportMsg({ text: `✓ ${displayName} — ${classKey} nv ${parsed.level || '?'} cargado (${parsed.source})`, ok: true });
+        setTimeout(() => setImportMsg(null), 4000);
+      } catch {
+        setImportMsg({ text: '❌ Error al leer el archivo JSON', ok: false });
+        setTimeout(() => setImportMsg(null), 3000);
+      }
+    };
+    reader.readAsText(file);
+  }, []);
+
+  const allBonusActions = [...cls.bonusActions, ...(subData?.extra?.filter(e => e.name.toLowerCase().includes('adicional') || e.name.toLowerCase().includes('bonus') || e.name.toLowerCase().includes('ba')) || [])];
+  const allReactions = [...cls.reactions];
+  const allFeatures = [...cls.classFeatures, ...(subData?.extra || [])];
+  const forgottenTip = subData?.forgottenTip || cls.forgottenTip;
+
+  return React.createElement('div', {
+    onDragOver: handleDragOver,
+    onDragLeave: handleDragLeave,
+    onDrop: handleDrop,
+    style: { minHeight: '100vh', background: cls.bg, fontFamily: "'Georgia', serif", color: '#e8e0d0', position: 'relative', overflow: 'hidden' }
+  },
+
+    // BG gradient
+    React.createElement('div', { style: { position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, background: `radial-gradient(ellipse at 20% 50%, ${cls.color}18 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, ${cls.accent}10 0%, transparent 50%)` } }),
+
+    // Drop overlay
+    dragOver && React.createElement('div', {
+      style: { position: 'fixed', inset: 0, zIndex: 100, background: '#000000cc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, pointerEvents: 'none' }
+    },
+      React.createElement('div', { style: { fontSize: 56 } }, '📄'),
+      React.createElement('div', { style: { fontSize: 22, fontWeight: 'bold', color: '#fff' } }, 'Soltá tu hoja aquí'),
+      React.createElement('div', { style: { fontSize: 14, color: '#aaa' } }, 'Se aceptan archivos JSON (Foundry VTT actor export)')
+    ),
+
+    // Import message toast
+    importMsg && React.createElement('div', {
+      style: { position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 99, padding: '10px 18px', borderRadius: 8, background: importMsg.ok ? '#1a3a1a' : '#3a1a1a', border: `1px solid ${importMsg.ok ? '#27ae6080' : '#c0392b80'}`, color: importMsg.ok ? '#2ecc71' : '#e74c3c', fontSize: 13, maxWidth: '90vw', textAlign: 'center' }
+    }, importMsg.text),
+
+    // HEADER
+    React.createElement('div', { style: { position: 'relative', zIndex: 1, borderBottom: `2px solid ${cls.color}60`, background: `linear-gradient(180deg, ${cls.bg} 0%, transparent 100%)`, padding: '16px 20px 12px' } },
+      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 } },
+        React.createElement('div', { style: { fontSize: 28, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${cls.color}30`, borderRadius: 8, border: `1px solid ${cls.color}50`, flexShrink: 0 } }, cls.icon),
+        React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+          editingName
+            ? React.createElement('input', { autoFocus: true, value: charName, onChange: e => setCharName(e.target.value), onBlur: () => setEditingName(false), onKeyDown: e => e.key === 'Enter' && setEditingName(false), style: { background: 'transparent', border: 'none', borderBottom: `1px solid ${cls.accent}`, color: '#fff', fontSize: 20, fontFamily: 'Georgia', fontWeight: 'bold', outline: 'none', width: '100%' } })
+            : React.createElement('div', { onClick: () => setEditingName(true), style: { fontSize: 20, fontWeight: 'bold', color: '#fff', cursor: 'pointer' }, title: 'Click para editar' }, charName),
+          React.createElement('div', { style: { fontSize: 12, color: cls.accent, marginTop: 2 } }, `${cls.icon} Nv ${charLevel} ${selectedClass.charAt(0).toUpperCase() + selectedClass.slice(1)} — ${cls.role}${selectedSubclass ? ' · ' + selectedSubclass : ''}`)
+        ),
+        // Nivel input
+        React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 } },
+          React.createElement('span', { style: { fontSize: 11, color: '#888' } }, 'Nv'),
+          React.createElement('input', { type: 'number', min: 1, max: 20, value: charLevel, onChange: e => setCharLevel(Math.max(1, Math.min(20, parseInt(e.target.value) || 1))), style: { width: 40, background: `${cls.color}20`, border: `1px solid ${cls.color}50`, borderRadius: 4, color: '#fff', textAlign: 'center', fontSize: 15, padding: '2px 4px' } })
+        ),
+        // Drag hint
+        React.createElement('div', { style: { fontSize: 10, color: '#555', textAlign: 'center', lineHeight: 1.4, flexShrink: 0, cursor: 'default' }, title: 'Arrastrá tu JSON de Foundry VTT aquí' },
+          React.createElement('div', { style: { fontSize: 18 } }, '📂'),
+          React.createElement('div', null, 'arrastrar hoja')
+        )
+      ),
+      // Class buttons
+      React.createElement('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 } },
+        Object.entries(CLASS_DATA).map(([key, data]) =>
+          React.createElement('button', { key, onClick: () => setSelectedClass(key), style: { padding: '3px 9px', borderRadius: 20, border: `1px solid ${selectedClass === key ? data.color : '#333'}`, background: selectedClass === key ? `${data.color}30` : 'transparent', color: selectedClass === key ? data.accent : '#777', fontSize: 11, cursor: 'pointer', transition: 'all 0.2s' } }, `${data.icon} ${key.charAt(0).toUpperCase() + key.slice(1)}`)
+        )
+      ),
+      // Subclass buttons
+      subclasses.length > 0 && React.createElement('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap' } },
+        React.createElement('button', { onClick: () => setSelectedSubclass(null), style: { padding: '2px 8px', borderRadius: 4, fontSize: 10, border: `1px solid ${!selectedSubclass ? cls.color : '#333'}`, background: !selectedSubclass ? `${cls.color}25` : 'transparent', color: !selectedSubclass ? cls.accent : '#666', cursor: 'pointer' } }, 'Base'),
+        subclasses.map(sub =>
+          React.createElement('button', { key: sub, onClick: () => setSelectedSubclass(sub), style: { padding: '2px 8px', borderRadius: 4, fontSize: 10, border: `1px solid ${selectedSubclass === sub ? cls.color : '#333'}`, background: selectedSubclass === sub ? `${cls.color}25` : 'transparent', color: selectedSubclass === sub ? cls.accent : '#666', cursor: 'pointer' } }, sub)
+        )
+      )
+    ),
+
+    // Difficulty warnings
+    cls.difficultyWarnings.length > 0 && React.createElement('div', { style: { position: 'relative', zIndex: 1, margin: '10px 16px 0', padding: '8px 12px', background: '#2d1500', border: '1px solid #e67e2260', borderRadius: 6 } },
+      cls.difficultyWarnings.map((w, i) => React.createElement('div', { key: i, style: { fontSize: 11, color: '#f39c12', marginBottom: i < cls.difficultyWarnings.length - 1 ? 3 : 0 } }, w))
+    ),
+
+    // TABS
+    React.createElement('div', { style: { position: 'relative', zIndex: 1, display: 'flex', gap: 0, borderBottom: '1px solid #333', margin: '10px 0 0', padding: '0 16px' } },
+      [{ id: 'combat', label: '⚔️ Combate' }, { id: 'features', label: '✨ Features' }, { id: 'universal', label: '📖 Reglas' }].map(tab =>
+        React.createElement('button', { key: tab.id, onClick: () => setActiveTab(tab.id), style: { padding: '7px 12px', fontSize: 12, background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? `2px solid ${cls.color}` : '2px solid transparent', color: activeTab === tab.id ? cls.accent : '#777', cursor: 'pointer', transition: 'all 0.2s' } }, tab.label)
+      )
+    ),
+
+    // CONTENT
+    React.createElement('div', { key: animKey, style: { position: 'relative', zIndex: 1, padding: '14px 16px', maxWidth: 900 } },
+
+      activeTab === 'combat' && React.createElement('div', null,
+        forgottenTip && React.createElement('div', { style: { padding: '9px 12px', marginBottom: 14, background: '#1a0f00', border: '1px solid #c0392b80', borderLeft: '3px solid #c0392b', borderRadius: 4, fontSize: 12, color: '#e88' } }, forgottenTip),
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
+          React.createElement(Section, { title: '⚡ ACCIONES ADICIONALES', color: cls.color, accent: cls.accent },
+            allBonusActions.length > 0
+              ? allBonusActions.map((b, i) => React.createElement(ActionCard, { key: i, ...b, accentColor: cls.accent, highlightColor: cls.color }))
+              : React.createElement('p', { style: { color: '#666', fontSize: 11, fontStyle: 'italic' } }, 'Sin acciones adicionales de clase. Podés atacar con arma secundaria si peleás con dos armas ligeras.')
+          ),
+          React.createElement(Section, { title: '🔄 REACCIONES', color: cls.color, accent: cls.accent },
+            ...allReactions.map((r, i) => React.createElement(ActionCard, { key: i, ...r, accentColor: cls.accent, highlightColor: cls.color })),
+            React.createElement('div', { style: { marginTop: 4, padding: '5px 8px', background: '#ffffff08', borderRadius: 4, fontSize: 10, color: '#888' } }, '+ Siempre: ', React.createElement('span', { style: { color: '#aaa' } }, 'Ataque de oportunidad cuando enemigo sale de tu alcance sin Disengage'))
+          )
+        ),
+        React.createElement('div', { style: { marginTop: 10, padding: '9px 12px', background: '#ffffff06', border: '1px solid #ffffff15', borderRadius: 6 } },
+          React.createElement('div', { style: { fontSize: 11, fontWeight: 'bold', color: cls.accent, marginBottom: 5 } }, 'TU TURNO — economía de acción'),
+          React.createElement('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 5 } },
+            [{ label: 'MOVIMIENTO', color: '#3498db' }, { label: 'ACCIÓN', color: '#e74c3c' }, { label: 'ACCIÓN ADICIONAL', color: '#f39c12' }, { label: 'INTERACCIÓN GRATIS', color: '#27ae60' }].map(item =>
+              React.createElement('div', { key: item.label, style: { padding: '2px 7px', borderRadius: 4, background: `${item.color}20`, border: `1px solid ${item.color}50`, fontSize: 10, color: item.color } }, item.label)
+            )
+          ),
+          React.createElement('div', { style: { fontSize: 10, color: '#666' } }, 'La REACCIÓN se usa fuera de tu turno (1 por ronda) · Bonus Action ≠ Action — no son intercambiables')
+        )
+      ),
+
+      activeTab === 'features' && React.createElement('div', null,
+        forgottenTip && React.createElement('div', { style: { padding: '9px 12px', marginBottom: 14, background: '#1a0f00', border: '1px solid #c0392b80', borderLeft: '3px solid #c0392b', borderRadius: 4, fontSize: 12, color: '#e88' } }, forgottenTip),
+        React.createElement('div', { style: { display: 'grid', gap: 8 } },
+          allFeatures.map((f, i) => React.createElement(FeatureCard, { key: i, ...f, accentColor: cls.accent, highlightColor: cls.color }))
+        )
+      ),
+
+      activeTab === 'universal' && React.createElement('div', null,
+        UNIVERSAL_RULES.map((section, si) =>
+          React.createElement('div', { key: si, style: { marginBottom: 18 } },
+            React.createElement('div', { style: { fontSize: 11, fontWeight: 'bold', color: cls.accent, letterSpacing: '0.1em', marginBottom: 7, borderBottom: `1px solid ${cls.color}40`, paddingBottom: 4 } }, section.title.toUpperCase()),
+            React.createElement('div', { style: { display: 'grid', gap: 5 } },
+              section.items.map((item, i) =>
+                React.createElement('div', { key: i, style: { display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 10px', background: '#ffffff06', borderRadius: 4, border: '1px solid #ffffff10' } },
+                  React.createElement('div', { style: { flexShrink: 0, padding: '2px 7px', borderRadius: 3, background: `${item.color || cls.color}25`, border: `1px solid ${item.color || cls.color}50`, fontSize: 10, fontWeight: 'bold', color: item.color || cls.accent, minWidth: 55, textAlign: 'center' } }, item.label),
+                  React.createElement('div', { style: { fontSize: 12, color: '#ccc', lineHeight: 1.4 } }, item.desc)
+                )
+              )
+            )
+          )
+        ),
+        React.createElement('div', { style: { marginTop: 6 } },
+          React.createElement('div', { style: { fontSize: 11, fontWeight: 'bold', color: cls.accent, letterSpacing: '0.1em', marginBottom: 7, borderBottom: `1px solid ${cls.color}40`, paddingBottom: 4 } }, 'CONDICIONES PRINCIPALES'),
+          React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 } },
+            [
+              { name: 'Prono', effect: 'Desventaja en ataques · Melee vs vos con ventaja · Mitad del mov para pararse' },
+              { name: 'Inconsciente', effect: 'Tiradas de muerte · Ataques con ventaja · Crítico automático a 5ft' },
+              { name: 'Atrapado', effect: 'Sin movimiento · Desventaja en ataques · Ventaja para atacantes' },
+              { name: 'Asustado', effect: 'No puede acercarse a la fuente · Desventaja en checks/ataques mientras la ve' },
+              { name: 'Paralizado', effect: 'Indefenso · Crítico automático a 5ft · Falla STR y DEX saves' },
+              { name: 'Concentración', effect: '1 hechizo a la vez · Daño: CON save DC10 o mitad del daño (el mayor)' },
+            ].map((c, i) =>
+              React.createElement('div', { key: i, style: { padding: '6px 10px', background: '#ffffff05', borderRadius: 4, border: '1px solid #ffffff10' } },
+                React.createElement('div', { style: { fontSize: 11, fontWeight: 'bold', color: '#e8c070', marginBottom: 2 } }, c.name),
+                React.createElement('div', { style: { fontSize: 10, color: '#888', lineHeight: 1.4 } }, c.effect)
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    // FOOTER
+    React.createElement('div', { style: { position: 'relative', zIndex: 1, textAlign: 'center', padding: '10px', borderTop: '1px solid #222', fontSize: 10, color: '#444', marginTop: 8 } },
+      `Bertini's · Cheat Sheet de ${charName} · ${cls.icon} Nivel ${charLevel} ${selectedClass.charAt(0).toUpperCase() + selectedClass.slice(1)}`
+    )
+  );
+}
+
+ReactDOM.render(React.createElement(CheatSheet), document.getElementById('root'));
+</script>
+</body>
+</html>
