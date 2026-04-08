@@ -1,0 +1,12 @@
+{
+  "id": "bertini-sync",
+  "title": "Bertini Sync — Cheat Sheet Connector",
+  "description": "Conecta tu character sheet de Foundry con la Bertini Cheat Sheet web en tiempo real.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12"
+  },
+  "esmodules": ["sync.js"],
+  "authors": [{ "name": "Bertini" }]
+}

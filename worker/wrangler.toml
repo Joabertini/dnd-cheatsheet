@@ -1,0 +1,7 @@
+name = "dnd-cheatsheet-proxy"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "SYNC"
+id = "4e47e06922b84d5692d149d8f1f322be"
