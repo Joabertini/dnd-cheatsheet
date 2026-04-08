@@ -1231,6 +1231,76 @@ function CheatSheet() {
   const [detectedCombos, setDetectedCombos] = useState([]);
   const [hasImport, setHasImport] = useState(false);
 
+  // ── Sync state ──────────────────────────────────────────────────────────
+  const [syncRoomId, setSyncRoomId]       = useState(() => localStorage.getItem('bertini_roomId') || null);
+  const [syncActorName, setSyncActorName] = useState(() => localStorage.getItem('bertini_actorName') || null);
+  const [syncLive, setSyncLive]           = useState(null); // { hp, conditions, slots, resources }
+  const [syncPairCode, setSyncPairCode]   = useState('');
+  const [syncModal, setSyncModal]         = useState(false); // 'pair' | 'connected' | false
+  const [syncTs, setSyncTs]               = useState(0);
+
+  const SYNC_API = 'https://dnd-cheatsheet-proxy.joabertini.workers.dev';
+
+  // Polling
+  useEffect(() => {
+    if (!syncRoomId) return;
+    let cancelled = false;
+    let lastTs = syncTs;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(`${SYNC_API}/__sync/poll?roomId=${syncRoomId}&since=${lastTs}`);
+        if (res.status === 200) {
+          const { state } = await res.json();
+          lastTs = state._ts;
+          setSyncTs(state._ts);
+          setSyncLive(state);
+          // Aplicar clase/nombre si cambia
+          if (state.name && state.name !== charName) setCharName(state.name);
+        }
+      } catch(_) {}
+      if (!cancelled) setTimeout(poll, 2000);
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [syncRoomId]);
+
+  const handlePair = useCallback(async () => {
+    const code = syncPairCode.trim().toUpperCase().replace(/\W/g,'');
+    if (!code) return;
+    try {
+      const res = await fetch(`${SYNC_API}/__sync/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setImportMsg({ text: `❌ ${err.error || 'Código inválido'}`, ok: false });
+        setTimeout(() => setImportMsg(null), 3000);
+        return;
+      }
+      const { roomId, actorName } = await res.json();
+      setSyncRoomId(roomId);
+      setSyncActorName(actorName);
+      localStorage.setItem('bertini_roomId', roomId);
+      localStorage.setItem('bertini_actorName', actorName);
+      setSyncModal(false);
+      setSyncPairCode('');
+      setImportMsg({ text: `✓ Foundry conectado — ${actorName}`, ok: true });
+      setTimeout(() => setImportMsg(null), 4000);
+    } catch(_) {
+      setImportMsg({ text: '❌ Error conectando con Foundry', ok: false });
+      setTimeout(() => setImportMsg(null), 3000);
+    }
+  }, [syncPairCode]);
+
+  const handleDisconnect = useCallback(() => {
+    setSyncRoomId(null); setSyncActorName(null); setSyncLive(null);
+    localStorage.removeItem('bertini_roomId'); localStorage.removeItem('bertini_actorName');
+    setSyncModal(false);
+  }, []);
+
   const cls = CLASS_DATA[selectedClass];
   const subclasses = Object.keys(cls.subclasses);
   const subData = selectedSubclass ? cls.subclasses[selectedSubclass] : null;
@@ -1358,6 +1428,72 @@ function CheatSheet() {
       React.createElement('div', { style: { fontSize: 14, color: '#aaa' } }, 'JSON de Foundry VTT o PDF de hoja de personaje')
     ),
 
+    // ── Sync Modal ────────────────────────────────────────────────────────
+    syncModal && React.createElement('div', {
+      onClick: e => { if (e.target === e.currentTarget) setSyncModal(false); },
+      style: { position: 'fixed', inset: 0, zIndex: 200, background: '#000000cc', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+    },
+      syncModal === 'pair'
+        ? React.createElement('div', { style: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, padding: 32, width: '100%', maxWidth: 340, textAlign: 'center', fontFamily: 'Georgia,serif', color: '#e8e0d0' } },
+            React.createElement('div', { style: { fontSize: 36, marginBottom: 8 } }, '🎲'),
+            React.createElement('div', { style: { fontSize: 18, fontWeight: 'bold', marginBottom: 6 } }, 'Conectar Foundry VTT'),
+            React.createElement('div', { style: { fontSize: 12, color: '#666', marginBottom: 20, lineHeight: 1.5 } }, 'En Foundry, abrí tu character sheet y hacé click en el ícono 📱. Ingresá el código que aparece:'),
+            React.createElement('input', {
+              type: 'text', placeholder: 'Ej: LOBO4821',
+              value: syncPairCode,
+              onChange: e => setSyncPairCode(e.target.value.toUpperCase()),
+              onKeyDown: e => e.key === 'Enter' && handlePair(),
+              autoFocus: true,
+              style: { width: '100%', padding: '10px 14px', background: '#222', border: '1px solid #444', borderRadius: 6, color: '#fff', fontSize: 20, fontFamily: 'Georgia,serif', textAlign: 'center', letterSpacing: '0.15em', outline: 'none', marginBottom: 10 }
+            }),
+            React.createElement('button', {
+              onClick: handlePair,
+              style: { width: '100%', padding: '10px', background: '#c0392b', border: 'none', borderRadius: 6, color: '#fff', fontSize: 14, fontFamily: 'Georgia,serif', cursor: 'pointer', marginBottom: 8 }
+            }, 'Conectar'),
+            React.createElement('button', {
+              onClick: () => setSyncModal(false),
+              style: { width: '100%', padding: '8px', background: 'transparent', border: '1px solid #333', borderRadius: 6, color: '#666', fontSize: 12, fontFamily: 'Georgia,serif', cursor: 'pointer' }
+            }, 'Cancelar')
+          )
+        : React.createElement('div', { style: { background: '#1a1a1a', border: '1px solid #2ecc7150', borderRadius: 12, padding: 32, width: '100%', maxWidth: 340, textAlign: 'center', fontFamily: 'Georgia,serif', color: '#e8e0d0' } },
+            React.createElement('div', { style: { fontSize: 36, marginBottom: 8 } }, '🟢'),
+            React.createElement('div', { style: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 } }, 'Foundry Conectado'),
+            React.createElement('div', { style: { fontSize: 14, color: '#2ecc71', marginBottom: 4 } }, syncActorName),
+            syncLive?.hp && React.createElement('div', { style: { fontSize: 12, color: '#888', marginBottom: 16 } }, `HP: ${syncLive.hp.value}/${syncLive.hp.max}${syncLive.hp.temp ? ` (+${syncLive.hp.temp} temp)` : ''}`),
+            React.createElement('button', {
+              onClick: handleDisconnect,
+              style: { width: '100%', padding: '10px', background: 'transparent', border: '1px solid #c0392b', borderRadius: 6, color: '#c0392b', fontSize: 13, fontFamily: 'Georgia,serif', cursor: 'pointer' }
+            }, 'Desconectar')
+          )
+    ),
+
+    // ── Live Sync Bar (cuando hay datos en tiempo real) ───────────────────
+    syncLive && React.createElement('div', {
+      style: { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 90, background: '#0d0d0d', borderTop: '1px solid #2ecc7130', padding: '6px 16px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, fontFamily: 'Georgia,serif', flexWrap: 'wrap' }
+    },
+      React.createElement('span', { style: { color: '#2ecc71', fontWeight: 'bold' } }, '⬤ LIVE'),
+      // HP
+      syncLive.hp && React.createElement('span', { style: { color: syncLive.hp.value <= syncLive.hp.max * 0.25 ? '#e74c3c' : syncLive.hp.value <= syncLive.hp.max * 0.5 ? '#f39c12' : '#e8e0d0' } },
+        `❤️ ${syncLive.hp.value}/${syncLive.hp.max}${syncLive.hp.temp ? ` +${syncLive.hp.temp}` : ''}`
+      ),
+      // Concentración
+      syncLive.concentration?.active && React.createElement('span', { style: { color: '#9b59b6' } },
+        `🔮 Conc: ${syncLive.concentration.spell || '?'}`
+      ),
+      // Condiciones
+      syncLive.conditions?.length > 0 && React.createElement('span', { style: { color: '#e74c3c' } },
+        `⚠️ ${syncLive.conditions.join(', ')}`
+      ),
+      // Spell slots
+      syncLive.slots && Object.keys(syncLive.slots).length > 0 && React.createElement('span', { style: { color: '#888' } },
+        'Slots: ' + Object.entries(syncLive.slots).map(([lvl, s]) => `${lvl}:${s.value}/${s.max}`).join(' ')
+      ),
+      // Recursos
+      syncLive.resources && Object.values(syncLive.resources).map(r =>
+        React.createElement('span', { key: r.label, style: { color: '#888' } }, `${r.label}: ${r.value}/${r.max}`)
+      )
+    ),
+
     // Toast
     importMsg && React.createElement('div', {
       style: { position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 99, padding: '10px 18px', borderRadius: 8, background: importMsg.ok ? '#1a3a1a' : '#3a1a1a', border: `1px solid ${importMsg.ok ? '#27ae6080' : '#c0392b80'}`, color: importMsg.ok ? '#2ecc71' : '#e74c3c', fontSize: 13, maxWidth: '90vw', textAlign: 'center', boxShadow: '0 4px 20px #00000080' }
@@ -1384,6 +1520,15 @@ function CheatSheet() {
         React.createElement('div', { style: { fontSize: 10, color: '#555', textAlign: 'center', lineHeight: 1.4, flexShrink: 0 }, title: 'Arrastrá tu JSON de Foundry VTT — detecta feats y combos' },
           React.createElement('div', { style: { fontSize: 18 } }, '📂'),
           React.createElement('div', null, 'arrastrar hoja')
+        ),
+        // Botón Foundry Sync
+        React.createElement('div', {
+          onClick: () => setSyncModal(syncRoomId ? 'connected' : 'pair'),
+          title: syncRoomId ? `Foundry conectado — ${syncActorName}` : 'Conectar con Foundry VTT',
+          style: { fontSize: 10, color: syncRoomId ? '#2ecc71' : '#555', textAlign: 'center', lineHeight: 1.4, flexShrink: 0, cursor: 'pointer', transition: 'color 0.2s' }
+        },
+          React.createElement('div', { style: { fontSize: 18 } }, syncRoomId ? '🟢' : '🎲'),
+          React.createElement('div', null, syncRoomId ? 'live' : 'foundry')
         )
       ),
       // Class buttons
