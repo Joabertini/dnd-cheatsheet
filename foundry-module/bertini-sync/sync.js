@@ -10,7 +10,7 @@
  *  5. Desde ese momento, cada cambio en HP/condiciones/recursos se pushea
  */
 
-const SYNC_URL = 'https://dnd-cheatsheet-proxy.joabertini.workers.dev';
+const SYNC_URL = 'https://dnd-cheatsheet-proxy.bertinisdnd.workers.dev';
 const PUSH_INTERVAL_MS = 2000; // push cada 2s si hubo cambios
 
 // ── Estado global del módulo ──────────────────────────────────────────────────
